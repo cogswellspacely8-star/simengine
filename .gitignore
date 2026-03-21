@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+sim_results.json
+evolution_results.json
+*.swp
+*.swo
+*~

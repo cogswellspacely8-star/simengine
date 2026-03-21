@@ -1,0 +1,76 @@
+{
+  "name": "Investment Portfolio (Basic)",
+  "description": "Simple 120-month investment portfolio simulation with normal returns",
+  "n_simulations": 5000,
+  "n_steps": 120,
+  "step_label": "month",
+  "seed": 42,
+
+  "parameters": {
+    "market_return_monthly": {
+      "distribution": "normal",
+      "params": {"mean": 0.007, "std": 0.04, "min": -0.30, "max": 0.20},
+      "calibration": {
+        "source": "S&P 500 historical monthly returns (mean ~0.8%, std ~4%)"
+      }
+    }
+  },
+
+  "controls": {
+    "monthly_contribution": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Operator monthly investment amount"}
+    },
+    "expense_ratio_monthly": {
+      "distribution": "fixed",
+      "params": {"value": 0.0004},
+      "calibration": {"source": "Low-cost index fund expense ratio (~0.05% annual)"}
+    }
+  },
+
+  "exogenous": {},
+
+  "initial_state": {
+    "portfolio_value": 10000,
+    "total_contributed": 10000,
+    "peak_value": 10000,
+    "max_drawdown_pct": 0
+  },
+
+  "step_logic": [
+    {"target": "gross_return",  "expr": "portfolio_value * market_return_monthly"},
+    {"target": "fees",          "expr": "portfolio_value * expense_ratio_monthly"},
+    {"target": "net_change",    "expr": "gross_return - fees + monthly_contribution"},
+    {"target": "new_value",     "expr": "max(0, portfolio_value + net_change)"},
+    {"target": "drawdown",      "expr": "(peak_value - new_value) / peak_value if peak_value > 0 else 0"}
+  ],
+
+  "accumulators": {
+    "portfolio_value":   "new_value",
+    "total_contributed": "total_contributed + monthly_contribution",
+    "peak_value":        "max(peak_value, portfolio_value)",
+    "max_drawdown_pct":  "max(max_drawdown_pct, drawdown)"
+  },
+
+  "metrics": {
+    "final_value":       {"expr": "portfolio_value",                    "format": "dollar"},
+    "total_contributed": {"expr": "total_contributed",                  "format": "dollar"},
+    "total_gain":        {"expr": "portfolio_value - total_contributed", "format": "dollar"},
+    "return_multiple":   {"expr": "portfolio_value / total_contributed if total_contributed > 0 else 0", "format": "number"},
+    "max_drawdown":      {"expr": "max_drawdown_pct",                   "format": "percent"}
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, final_value_median / 1000)",          "weight": 0.50, "name": "growth"},
+      {"expr": "max(0, 100 - max_drawdown_median * 200)",      "weight": 0.30, "name": "stability"},
+      {"expr": "min(100, return_multiple_median * 50)",         "weight": 0.20, "name": "efficiency"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.monthly_contribution.params.value",     "range": [100, 2000]},
+    {"path": "controls.expense_ratio_monthly.params.value",    "range": [0.0001, 0.001]}
+  ]
+}

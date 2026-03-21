@@ -1,0 +1,103 @@
+{
+  "name": "Job Search Campaign (26-Week)",
+  "description": "Models a 26-week job search: applications, interviews, and offers with salary negotiation",
+  "n_simulations": 5000,
+  "n_steps": 26,
+  "step_label": "week",
+  "seed": 42,
+
+  "parameters": {
+    "interview_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.05, "mode": 0.12, "high": 0.25},
+      "calibration": {
+        "source": "Industry average: 5-25% of applications get interviews",
+        "updatable": true
+      }
+    },
+    "offer_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.10, "mode": 0.25, "high": 0.50},
+      "calibration": {
+        "source": "Typical interview-to-offer conversion for mid-career professionals",
+        "updatable": true
+      }
+    },
+    "base_salary": {
+      "distribution": "lognormal",
+      "params": {"median": 85000, "spread": 0.3, "min": 50000, "max": 200000},
+      "calibration": {
+        "source": "BLS median for professional occupations, adjusted for variance"
+      }
+    }
+  },
+
+  "controls": {
+    "applications_per_week": {
+      "distribution": "fixed",
+      "params": {"value": 10},
+      "calibration": {"source": "Operator target weekly applications"}
+    }
+  },
+
+  "exogenous": {
+    "negotiation_bump": {
+      "distribution": "uniform",
+      "params": {"low": 0.0, "high": 0.15},
+      "calibration": {"source": "Typical salary negotiation improvement range 0-15%"}
+    }
+  },
+
+  "initial_state": {
+    "total_applications": 0,
+    "total_interviews": 0,
+    "total_offers": 0,
+    "best_offer": 0
+  },
+
+  "step_logic": [
+    {"target": "interviews_this_week", "expr": "binomial(round(applications_per_week), interview_rate)"},
+    {"target": "offers_this_week",     "expr": "binomial(round(interviews_this_week), offer_rate)"},
+    {"target": "salary_offer",         "expr": "base_salary * (1 + negotiation_bump) if offers_this_week > 0 else 0"}
+  ],
+
+  "accumulators": {
+    "total_applications": "total_applications + applications_per_week",
+    "total_interviews":   "total_interviews + interviews_this_week",
+    "total_offers":       "total_offers + offers_this_week",
+    "best_offer":         "max(best_offer, salary_offer)"
+  },
+
+  "metrics": {
+    "total_applications":  {"expr": "total_applications",  "format": "number"},
+    "total_interviews":    {"expr": "total_interviews",    "format": "number"},
+    "total_offers":        {"expr": "total_offers",        "format": "number"},
+    "best_salary_offer":   {"expr": "best_offer",          "format": "dollar"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_offers",
+        "condition": "below",
+        "threshold": 1,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of zero offers after 26 weeks"
+      }
+    ],
+    "cvar_constraints": []
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, best_salary_offer_median / 1000)", "weight": 0.50, "name": "salary"},
+      {"expr": "min(100, total_offers_median * 20)",        "weight": 0.30, "name": "options"},
+      {"expr": "max(0, 100 - total_applications_median / 5)", "weight": 0.20, "name": "efficiency"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.applications_per_week.params.value", "range": [5, 25]},
+    {"path": "parameters.interview_rate.params.mode",       "range": [0.05, 0.30]}
+  ]
+}

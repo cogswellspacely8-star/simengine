@@ -1,0 +1,79 @@
+{
+  "name": "Investment Portfolio (Revised — Fat Tails + Inflation + Tax)",
+  "description": "Addresses Lindqvist critique: Student's t returns (df=5), 2.5% annual inflation adjustment, 15% capital gains tax at withdrawal. Monthly contributions in nominal dollars.",
+  "n_simulations": 5000,
+  "n_steps": 120,
+  "step_label": "month",
+
+  "initial_state": {
+    "portfolio_value": 10000,
+    "total_contributed": 10000,
+    "total_gains": 0,
+    "max_drawdown_pct": 0,
+    "peak_value": 10000,
+    "inflation_factor": 1.0
+  },
+
+  "variables": {
+    "market_return_monthly": {
+      "distribution": "student_t",
+      "params": {"mean": 0.007, "scale": 0.035, "df": 5, "min": -0.40, "max": 0.25}
+    },
+    "monthly_contribution": {
+      "distribution": "fixed",
+      "params": {"value": 500}
+    },
+    "expense_ratio_monthly": {
+      "distribution": "fixed",
+      "params": {"value": 0.0004}
+    },
+    "monthly_inflation_rate": {
+      "distribution": "fixed",
+      "params": {"value": 0.00207}
+    }
+  },
+
+  "step_logic": [
+    {"target": "gross_return",    "expr": "portfolio_value * market_return_monthly"},
+    {"target": "fees",            "expr": "portfolio_value * expense_ratio_monthly"},
+    {"target": "net_change",      "expr": "gross_return - fees + monthly_contribution"},
+    {"target": "new_value",       "expr": "max(0, portfolio_value + net_change)"},
+    {"target": "drawdown",        "expr": "(peak_value - new_value) / peak_value if peak_value > 0 else 0"},
+    {"target": "new_inflation",   "expr": "inflation_factor * (1 + monthly_inflation_rate)"}
+  ],
+
+  "accumulators": {
+    "portfolio_value":    "new_value",
+    "total_contributed":  "total_contributed + monthly_contribution",
+    "total_gains":        "portfolio_value - total_contributed",
+    "peak_value":         "max(peak_value, portfolio_value)",
+    "max_drawdown_pct":   "max(max_drawdown_pct, drawdown)",
+    "inflation_factor":   "new_inflation"
+  },
+
+  "metrics": {
+    "nominal_final_value":    {"expr": "portfolio_value",     "format": "dollar"},
+    "real_final_value":       {"expr": "portfolio_value / inflation_factor", "format": "dollar"},
+    "total_contributed":      {"expr": "total_contributed",   "format": "dollar"},
+    "nominal_gain":           {"expr": "total_gains",         "format": "dollar"},
+    "after_tax_gain":         {"expr": "max(0, total_gains) * 0.85", "format": "dollar"},
+    "real_after_tax_value":   {"expr": "(total_contributed + max(0, total_gains) * 0.85) / inflation_factor", "format": "dollar"},
+    "nominal_return_multiple":{"expr": "portfolio_value / total_contributed if total_contributed > 0 else 0", "format": "number"},
+    "real_return_multiple":   {"expr": "(portfolio_value / inflation_factor) / (total_contributed / inflation_factor) if total_contributed > 0 else 0", "format": "number"},
+    "max_drawdown":           {"expr": "max_drawdown_pct",    "format": "percent"},
+    "cumulative_inflation":   {"expr": "inflation_factor - 1","format": "percent"}
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, real_after_tax_value_median / 1000)", "weight": 0.40, "name": "real_growth"},
+      {"expr": "max(0, 100 - max_drawdown_median * 200)",      "weight": 0.30, "name": "stability"},
+      {"expr": "min(100, real_return_multiple_median * 50)",    "weight": 0.30, "name": "efficiency"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "variables.monthly_contribution.params.value",     "range": [100, 2000]},
+    {"path": "variables.expense_ratio_monthly.params.value",    "range": [0.0001, 0.001]}
+  ]
+}

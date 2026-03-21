@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SimEngine</title>
+<style>
+:root {
+  --bg: #0a0e17;
+  --surface: #111827;
+  --surface2: #1a2236;
+  --border: #2a3550;
+  --text: #e2e8f0;
+  --text2: #94a3b8;
+  --accent: #3b82f6;
+  --accent2: #60a5fa;
+  --green: #22c55e;
+  --red: #ef4444;
+  --amber: #f59e0b;
+  --font: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Header */
+header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+header h1 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--accent2);
+  letter-spacing: 1px;
+}
+
+header .tag {
+  font-size: 10px;
+  padding: 2px 8px;
+  background: var(--accent);
+  color: white;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Layout */
+.app {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  min-height: calc(100vh - 49px);
+}
+
+/* Sidebar */
+.sidebar {
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.sidebar h2 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+.domain-card {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.domain-card:hover { border-color: var(--accent); }
+.domain-card.active { border-color: var(--accent); background: var(--surface2); }
+
+.domain-card .name {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 4px;
+}
+
+.domain-card .desc {
+  font-size: 10px;
+  color: var(--text2);
+  line-height: 1.4;
+}
+
+.domain-card .meta {
+  font-size: 10px;
+  color: var(--text2);
+  margin-top: 6px;
+  display: flex;
+  gap: 12px;
+}
+
+/* Controls section */
+.controls-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.param-group {
+  margin-bottom: 16px;
+}
+
+.param-group h3 {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--accent2);
+  margin-bottom: 8px;
+}
+
+.param-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.param-row label {
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.param-row input {
+  width: 80px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 11px;
+  text-align: right;
+}
+
+.param-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Run controls */
+.run-controls {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.sim-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sim-setting label {
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.sim-setting input, .sim-setting select {
+  width: 100px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: var(--font);
+  font-size: 11px;
+}
+
+.btn {
+  display: block;
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 6px;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin-top: 12px;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-primary:hover { background: var(--accent2); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--surface2);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover { border-color: var(--accent); }
+
+/* Main content */
+.main {
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 60vh;
+  color: var(--text2);
+  font-size: 14px;
+}
+
+/* Results grid */
+.results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+}
+
+.results-header h2 {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.results-header .meta {
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.stat-card .label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 8px;
+}
+
+.stat-card .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--accent2);
+  margin-bottom: 4px;
+}
+
+.stat-card .sub {
+  font-size: 11px;
+  color: var(--text2);
+}
+
+.stat-card .range {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 11px;
+}
+
+.range-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  position: relative;
+  overflow: hidden;
+}
+
+.range-fill {
+  position: absolute;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  opacity: 0.6;
+}
+
+.range-median {
+  position: absolute;
+  height: 100%;
+  width: 2px;
+  background: var(--accent2);
+  border-radius: 1px;
+}
+
+/* Safety panel */
+.safety-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.safety-panel h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+.safety-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  font-size: 12px;
+}
+
+.safety-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.safety-badge.pass { background: rgba(34,197,94,0.15); color: var(--green); }
+.safety-badge.fail { background: rgba(239,68,68,0.15); color: var(--red); }
+
+/* Trajectory chart */
+.chart-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.chart-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 4px;
+}
+
+.chart-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.chart-tab {
+  padding: 4px 12px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-family: var(--font);
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+
+.chart-tab.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+canvas {
+  width: 100%;
+  height: 280px;
+}
+
+/* Fitness panel */
+.fitness-panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.fitness-panel h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+.fitness-score {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--accent2);
+  margin-bottom: 4px;
+}
+
+/* Evolution results */
+.evo-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 24px;
+}
+
+.evo-section h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text2);
+  margin-bottom: 12px;
+}
+
+/* Spinner */
+.spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SIMENGINE</h1>
+  <span class="tag">v3</span>
+</header>
+
+<div class="app">
+  <aside class="sidebar">
+    <h2>Domains</h2>
+    <div id="domain-list"></div>
+
+    <div class="controls-section" id="params-section" style="display:none">
+      <h2>Parameters</h2>
+      <div id="params-editor"></div>
+    </div>
+
+    <div class="run-controls" id="run-section" style="display:none">
+      <h2>Simulation</h2>
+      <div class="sim-setting">
+        <label>Runs</label>
+        <input type="number" id="n-sims" value="5000" min="100" max="50000" step="100">
+      </div>
+      <div class="sim-setting">
+        <label>Seed</label>
+        <input type="number" id="seed" value="42">
+      </div>
+      <button class="btn btn-primary" id="btn-run" onclick="runSimulation()">Run Simulation</button>
+      <button class="btn btn-secondary" id="btn-evolve" onclick="runEvolution()">Evolve (GA)</button>
+    </div>
+  </aside>
+
+  <main class="main" id="main">
+    <div class="empty-state">Select a domain to begin</div>
+  </main>
+</div>
+
+<script>
+const API = '';
+let currentDomain = null;
+let currentConfig = null;
+let currentResults = null;
+
+// --- Domain list ---
+async function loadDomains() {
+  const res = await fetch(API + '/api/domains');
+  const domains = await res.json();
+  const el = document.getElementById('domain-list');
+  el.innerHTML = domains.map(d => `
+    <div class="domain-card" onclick="selectDomain('${d.file}')" id="dc-${d.file}">
+      <div class="name">${d.name}</div>
+      <div class="desc">${d.description.slice(0, 120)}</div>
+      <div class="meta">
+        <span>${d.n_steps} ${d.step_label}s</span>
+        <span>${d.n_simulations.toLocaleString()} sims</span>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function selectDomain(file) {
+  document.querySelectorAll('.domain-card').forEach(c => c.classList.remove('active'));
+  const card = document.getElementById('dc-' + file);
+  if (card) card.classList.add('active');
+
+  currentDomain = file;
+  const res = await fetch(API + '/api/domain/' + file);
+  currentConfig = await res.json();
+
+  document.getElementById('n-sims').value = currentConfig.n_simulations || 5000;
+  if (currentConfig.seed) document.getElementById('seed').value = currentConfig.seed;
+
+  buildParamEditor();
+  document.getElementById('params-section').style.display = '';
+  document.getElementById('run-section').style.display = '';
+  document.getElementById('main').innerHTML = `<div class="empty-state">Configure and run "${currentConfig.name}"</div>`;
+}
+
+function buildParamEditor() {
+  const el = document.getElementById('params-editor');
+  let html = '';
+
+  const sections = [
+    ['Parameters', currentConfig.parameters || {}],
+    ['Controls', currentConfig.controls || {}],
+    ['Exogenous', currentConfig.exogenous || {}],
+  ];
+
+  // Also handle flat "variables" for backward compat
+  if (currentConfig.variables && !currentConfig.parameters) {
+    sections.length = 0;
+    sections.push(['Variables', currentConfig.variables]);
+  }
+
+  for (const [title, vars] of sections) {
+    if (!Object.keys(vars).length) continue;
+    html += `<div class="param-group"><h3>${title}</h3>`;
+    for (const [name, def] of Object.entries(vars)) {
+      const params = def.params || {};
+      for (const [pk, pv] of Object.entries(params)) {
+        if (typeof pv !== 'number') continue;
+        const cat = title.toLowerCase();
+        const path = (currentConfig.variables && !currentConfig.parameters)
+          ? `variables.${name}.params.${pk}`
+          : `${cat}.${name}.params.${pk}`;
+        html += `<div class="param-row">
+          <label>${name}.${pk}</label>
+          <input type="number" step="any" value="${pv}" data-path="${path}">
+        </div>`;
+      }
+    }
+    html += '</div>';
+  }
+  el.innerHTML = html;
+}
+
+function collectOverrides() {
+  const overrides = {};
+  document.querySelectorAll('#params-editor input[data-path]').forEach(input => {
+    const path = input.dataset.path;
+    const val = parseFloat(input.value);
+    if (!isNaN(val)) {
+      // Check if value differs from original
+      const parts = path.split('.');
+      let orig = currentConfig;
+      for (const p of parts) orig = orig?.[p];
+      if (orig !== val) overrides[path] = val;
+    }
+  });
+  return overrides;
+}
+
+// --- Simulation ---
+async function runSimulation() {
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Running...';
+
+  try {
+    const res = await fetch(API + '/api/simulate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        domain: currentDomain,
+        overrides: collectOverrides(),
+        n_simulations: parseInt(document.getElementById('n-sims').value),
+        seed: parseInt(document.getElementById('seed').value),
+      })
+    });
+    currentResults = await res.json();
+    if (currentResults.error) throw new Error(currentResults.error);
+    renderResults(currentResults);
+  } catch(e) {
+    document.getElementById('main').innerHTML = `<div class="empty-state" style="color:var(--red)">Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Simulation';
+  }
+}
+
+// --- Evolution ---
+async function runEvolution() {
+  const btn = document.getElementById('btn-evolve');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Evolving...';
+
+  try {
+    const res = await fetch(API + '/api/evolve', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        domain: currentDomain,
+        generations: 10,
+        population: 15,
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderEvolution(data);
+  } catch(e) {
+    document.getElementById('main').innerHTML = `<div class="empty-state" style="color:var(--red)">Error: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Evolve (GA)';
+  }
+}
+
+// --- Rendering ---
+function fmt(val, format) {
+  if (format === 'dollar') return '$' + Math.round(val).toLocaleString();
+  if (format === 'percent') return (val * 100).toFixed(1) + '%';
+  return typeof val === 'number' ? val.toFixed(2) : val;
+}
+
+function renderResults(r) {
+  let html = `
+    <div class="results-header">
+      <h2>${r.domain}</h2>
+      <div class="meta">${r.n_simulations.toLocaleString()} simulations in ${r.elapsed}s</div>
+    </div>
+  `;
+
+  // Stats cards
+  html += '<div class="stats-grid">';
+  for (const [name, s] of Object.entries(r.stats)) {
+    const f = s.format || 'number';
+    const range = s.p90 - s.p10;
+    const medianPos = range > 0 ? ((s.median - s.p10) / range * 100) : 50;
+    html += `
+      <div class="stat-card">
+        <div class="label">${name.replace(/_/g, ' ')}</div>
+        <div class="value">${fmt(s.median, f)}</div>
+        <div class="sub">mean ${fmt(s.mean, f)} | std ${fmt(s.std, f)}</div>
+        <div class="range">
+          <span style="font-size:10px">P10 ${fmt(s.p10, f)}</span>
+          <div class="range-bar">
+            <div class="range-fill" style="left:0;width:100%"></div>
+            <div class="range-median" style="left:${medianPos}%"></div>
+          </div>
+          <span style="font-size:10px">P90 ${fmt(s.p90, f)}</span>
+        </div>
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  // Safety
+  if (r.safety && (r.safety.chance?.length || r.safety.cvar?.length)) {
+    html += '<div class="safety-panel"><h3>Safety Constraints</h3>';
+    for (const c of (r.safety.chance || [])) {
+      const cls = c.passed ? 'pass' : 'fail';
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>P(${c.metric} ${c.condition} ${c.threshold.toLocaleString()}) = ${(c.actual_prob * 100).toFixed(1)}% (limit ${(c.max_prob * 100).toFixed(1)}%)</span>
+      </div>`;
+    }
+    for (const c of (r.safety.cvar || [])) {
+      const cls = c.passed ? 'pass' : 'fail';
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>CVaR(${(c.alpha*100).toFixed(0)}%) ${c.metric} = $${Math.round(c.actual_cvar).toLocaleString()} (min $${c.min_cvar.toLocaleString()})</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Fitness
+  if (r.fitness) {
+    html += `<div class="fitness-panel">
+      <h3>Fitness Score</h3>
+      <div class="fitness-score">${r.fitness.toFixed(1)}</div>
+    </div>`;
+  }
+
+  // Trajectories
+  if (r.trajectories && Object.keys(r.trajectories).length) {
+    const keys = Object.keys(r.trajectories);
+    html += `<div class="chart-section">
+      <h3>Trajectories (P10 / P50 / P90)</h3>
+      <div class="chart-tabs" id="chart-tabs">
+        ${keys.map((k, i) => `<div class="chart-tab ${i === 0 ? 'active' : ''}" onclick="switchChart('${k}')">${k.replace(/_/g, ' ')}</div>`).join('')}
+      </div>
+      <canvas id="trajectory-canvas"></canvas>
+    </div>`;
+  }
+
+  document.getElementById('main').innerHTML = html;
+
+  // Draw first trajectory
+  if (r.trajectories && Object.keys(r.trajectories).length) {
+    drawTrajectory(Object.keys(r.trajectories)[0]);
+  }
+}
+
+function switchChart(key) {
+  document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
+  event.target.classList.add('active');
+  drawTrajectory(key);
+}
+
+function drawTrajectory(key) {
+  const canvas = document.getElementById('trajectory-canvas');
+  if (!canvas || !currentResults) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const traj = currentResults.trajectories[key];
+  if (!traj) return;
+
+  const { p10, p50, p90 } = traj;
+  const n = p50.length;
+  const allVals = [...p10, ...p50, ...p90];
+  const minV = Math.min(...allVals);
+  const maxV = Math.max(...allVals);
+  const pad = { top: 20, right: 20, bottom: 30, left: 70 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+  const rangeV = maxV - minV || 1;
+
+  function x(i) { return pad.left + (i / (n - 1)) * cw; }
+  function y(v) { return pad.top + ch - ((v - minV) / rangeV) * ch; }
+
+  // Clear
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid lines
+  ctx.strokeStyle = '#1e293b';
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.top + (ch / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W - pad.right, yy); ctx.stroke();
+    const val = maxV - (rangeV / 4) * i;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px monospace';
+    ctx.textAlign = 'right';
+    const format = currentResults.stats[key]?.format || 'number';
+    ctx.fillText(fmt(val, format), pad.left - 8, yy + 4);
+  }
+
+  // X axis labels
+  ctx.fillStyle = '#64748b';
+  ctx.textAlign = 'center';
+  const stepLabel = currentConfig?.step_label || 'step';
+  for (let i = 0; i < n; i += Math.max(1, Math.floor(n / 6))) {
+    ctx.fillText(`${stepLabel} ${i + 1}`, x(i), H - 8);
+  }
+
+  // P10-P90 band
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p90[i])); else ctx.lineTo(x(i), y(p90[i])); }
+  for (let i = n - 1; i >= 0; i--) ctx.lineTo(x(i), y(p10[i]));
+  ctx.closePath(); ctx.fill();
+
+  // P10 line
+  ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p10[i])); else ctx.lineTo(x(i), y(p10[i])); }
+  ctx.stroke();
+
+  // P90 line
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p90[i])); else ctx.lineTo(x(i), y(p90[i])); }
+  ctx.stroke();
+
+  // P50 line
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#3b82f6';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p50[i])); else ctx.lineTo(x(i), y(p50[i])); }
+  ctx.stroke();
+
+  // Legend
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#64748b';
+  const lx = W - pad.right - 120;
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; ctx.fillText('--- P10 / P90', lx, pad.top + 12);
+  ctx.fillStyle = '#3b82f6'; ctx.fillText('--- P50 (median)', lx, pad.top + 24);
+}
+
+function renderEvolution(data) {
+  let html = `
+    <div class="results-header">
+      <h2>${data.domain} - Evolution</h2>
+      <div class="meta">${data.elapsed}s total</div>
+    </div>
+    <div class="fitness-panel">
+      <h3>Best Fitness</h3>
+      <div class="fitness-score">${data.best_fitness.toFixed(1)}</div>
+    </div>
+  `;
+
+  // Best stats
+  html += '<div class="stats-grid">';
+  for (const [name, s] of Object.entries(data.best_stats)) {
+    const f = s.format || 'number';
+    html += `
+      <div class="stat-card">
+        <div class="label">${name.replace(/_/g, ' ')}</div>
+        <div class="value">${fmt(s.median, f)}</div>
+        <div class="sub">mean ${fmt(s.mean, f)}</div>
+      </div>
+    `;
+  }
+  html += '</div>';
+
+  // Safety
+  if (data.best_safety && (data.best_safety.chance?.length || data.best_safety.cvar?.length)) {
+    html += '<div class="safety-panel"><h3>Safety Constraints (Best)</h3>';
+    for (const c of (data.best_safety.chance || [])) {
+      const cls = c.passed ? 'pass' : 'fail';
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>P(${c.metric} ${c.condition} ${c.threshold.toLocaleString()}) = ${(c.actual_prob * 100).toFixed(1)}%</span>
+      </div>`;
+    }
+    for (const c of (data.best_safety.cvar || [])) {
+      const cls = c.passed ? 'pass' : 'fail';
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>CVaR(${(c.alpha*100).toFixed(0)}%) ${c.metric} = $${Math.round(c.actual_cvar).toLocaleString()}</span>
+      </div>`;
+    }
+    html += '</div>';
+  }
+
+  // Evolution history chart
+  if (data.history?.length) {
+    html += `<div class="chart-section">
+      <h3>Fitness Over Generations</h3>
+      <canvas id="evo-canvas"></canvas>
+    </div>`;
+  }
+
+  document.getElementById('main').innerHTML = html;
+
+  if (data.history?.length) drawEvoChart(data.history);
+}
+
+function drawEvoChart(history) {
+  const canvas = document.getElementById('evo-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = rect.height;
+
+  const n = history.length;
+  const bestFits = history.map(h => h.best_fit);
+  const avgFits = history.map(h => h.avg_fit);
+  const allVals = [...bestFits, ...avgFits];
+  const minV = Math.min(...allVals) * 0.9;
+  const maxV = Math.max(...allVals) * 1.05;
+  const pad = { top: 20, right: 20, bottom: 30, left: 60 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+  const rangeV = maxV - minV || 1;
+
+  function x(i) { return pad.left + (i / Math.max(1, n - 1)) * cw; }
+  function y(v) { return pad.top + ch - ((v - minV) / rangeV) * ch; }
+
+  ctx.fillStyle = '#111827';
+  ctx.fillRect(0, 0, W, H);
+
+  // Grid
+  ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.top + (ch / 4) * i;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W - pad.right, yy); ctx.stroke();
+    const val = maxV - (rangeV / 4) * i;
+    ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
+    ctx.fillText(val.toFixed(1), pad.left - 8, yy + 4);
+  }
+
+  // X labels
+  ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
+  for (let i = 0; i < n; i += Math.max(1, Math.floor(n / 8))) {
+    ctx.fillText(`Gen ${i}`, x(i), H - 8);
+  }
+
+  // Average fitness
+  ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(avgFits[i])); else ctx.lineTo(x(i), y(avgFits[i])); }
+  ctx.stroke();
+
+  // Best fitness
+  ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(bestFits[i])); else ctx.lineTo(x(i), y(bestFits[i])); }
+  ctx.stroke();
+
+  // Legend
+  ctx.font = '10px monospace';
+  ctx.fillStyle = '#22c55e'; ctx.fillText('Best', W - pad.right - 80, pad.top + 12);
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.8)'; ctx.fillText('Average', W - pad.right - 80, pad.top + 24);
+}
+
+// --- Init ---
+window.addEventListener('resize', () => {
+  if (currentResults && document.getElementById('trajectory-canvas')) {
+    const active = document.querySelector('.chart-tab.active');
+    if (active) drawTrajectory(active.textContent.trim().replace(/ /g, '_'));
+  }
+});
+
+loadDomains();
+</script>
+</body>
+</html>

@@ -1,0 +1,147 @@
+{
+  "name": "Venture Horizon Pipeline v3 (Calibrated)",
+  "description": "Web design consultancy — 12-month revenue simulation with restructured schema, safety constraints, and calibration sources",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "_schema_note": "v3 separates variables into parameters (uncertain, updatable), controls (operator decisions), and exogenous (uncontrollable environment)",
+
+  "parameters": {
+    "close_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.15, "mode": 0.30, "high": 0.55},
+      "calibration": {
+        "source": "Operator estimate + SBA small-business conversion benchmarks",
+        "note": "SBA data shows wide variance in service-business close rates; 20-40% typical for referral-heavy consultancies",
+        "updatable": true,
+        "update_method": "Bayesian conjugate (Beta-Binomial) after observing actual closes/leads per month"
+      }
+    },
+    "project_value": {
+      "distribution": "lognormal",
+      "params": {"median": 3000, "spread": 0.7, "min": 500, "max": 20000},
+      "calibration": {
+        "source": "Operator historical pricing; validated against Clutch.co web-design market data ($3k-$15k range for SMB sites)",
+        "note": "Log-normal with spread=0.7 implies P10=$1,400, P90=$6,400 — factor of 4.6x range",
+        "updatable": true
+      }
+    }
+  },
+
+  "controls": {
+    "monthly_fixed_costs": {
+      "distribution": "fixed",
+      "params": {"value": 1500},
+      "calibration": {"source": "Operator actual: tools, hosting, subscriptions", "updatable": false}
+    },
+    "monthly_living_costs": {
+      "distribution": "fixed",
+      "params": {"value": 3500},
+      "calibration": {"source": "Operator actual: Delaware CoL estimate", "updatable": false}
+    },
+    "available_hours": {
+      "distribution": "fixed",
+      "params": {"value": 160},
+      "calibration": {"source": "Standard 40hr/week", "updatable": false}
+    }
+  },
+
+  "exogenous": {
+    "leads_per_month": {
+      "distribution": "triangular",
+      "params": {"low": 1, "mode": 3, "high": 8},
+      "calibration": {
+        "source": "Operator estimate for early-stage consultancy without paid acquisition",
+        "note": "SBA Office of Advocacy: majority of nonemployer firms report <$50k annual revenue, consistent with low lead volume",
+        "updatable": true,
+        "update_method": "Poisson conjugate (Gamma-Poisson) after observing actual monthly lead counts"
+      }
+    },
+    "hours_per_project": {
+      "distribution": "triangular",
+      "params": {"low": 15, "mode": 40, "high": 120},
+      "calibration": {
+        "source": "Operator estimate: small brochure site (15h) to full custom build (120h)",
+        "updatable": true
+      }
+    },
+    "lead_growth_rate": {
+      "distribution": "fixed",
+      "params": {"value": 1.03},
+      "calibration": {"source": "Assumed 3%/month organic growth from reputation and referrals"}
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "total_deals": 0,
+    "total_hours": 0
+  },
+
+  "step_logic": [
+    {"target": "growth_adj",       "expr": "lead_growth_rate ** (_step - 1)"},
+    {"target": "adj_leads",        "expr": "leads_per_month * growth_adj"},
+    {"target": "deals_this_month", "expr": "binomial(round(adj_leads), close_rate)"},
+    {"target": "revenue_booked",   "expr": "deals_this_month * project_value"},
+    {"target": "hours_used",       "expr": "deals_this_month * hours_per_project"},
+    {"target": "monthly_costs",    "expr": "monthly_fixed_costs + monthly_living_costs"},
+    {"target": "utilization",      "expr": "hours_used / available_hours if available_hours > 0 else 0"},
+    {"target": "overflow",         "expr": "max(0, hours_used - available_hours)"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue": "cumulative_revenue + revenue_booked",
+    "cumulative_costs":   "cumulative_costs + monthly_costs",
+    "cash_position":      "cumulative_revenue - cumulative_costs",
+    "total_deals":        "total_deals + deals_this_month",
+    "total_hours":        "total_hours + hours_used"
+  },
+
+  "metrics": {
+    "annual_revenue":  {"expr": "cumulative_revenue",            "format": "dollar"},
+    "annual_deals":    {"expr": "total_deals",                   "format": "number"},
+    "final_cash":      {"expr": "cash_position",                 "format": "dollar"},
+    "avg_utilization":  {"expr": "total_hours / (available_hours * 12)", "format": "percent"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "annual_revenue",
+        "condition": "below",
+        "threshold": 60000,
+        "max_prob": 0.15,
+        "rationale": "Annual costs are ~$60k; exceeding 15% ruin probability is unacceptable"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "final_cash",
+        "alpha": 0.10,
+        "min_cvar": -25000,
+        "rationale": "In the worst 10% of scenarios, cash deficit must not exceed $25k (operator's maximum tolerable loss)"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, annual_revenue_median / 800)",            "weight": 0.30, "name": "revenue"},
+      {"expr": "max(0, 100 - annual_revenue_p10 / 600 * 100) * -1 + 100", "weight": 0.25, "name": "survival"},
+      {"expr": "min(100, final_cash_median / 200 + 50)",           "weight": 0.20, "name": "cash_health"},
+      {"expr": "max(0, 100 - avg_utilization_median * 120)",       "weight": 0.15, "name": "capacity"},
+      {"expr": "min(100, annual_revenue_p90 / 1000)",              "weight": 0.10, "name": "upside"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "parameters.close_rate.params.mode",          "range": [0.15, 0.60]},
+    {"path": "parameters.close_rate.params.low",           "range": [0.05, 0.40]},
+    {"path": "parameters.project_value.params.median",     "range": [1500, 15000]},
+    {"path": "exogenous.hours_per_project.params.mode",    "range": [10, 80]},
+    {"path": "exogenous.hours_per_project.params.high",    "range": [30, 150]}
+  ]
+}

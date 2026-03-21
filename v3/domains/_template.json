@@ -1,0 +1,98 @@
+{
+  "name": "Your Domain Name",
+  "description": "What this simulation models",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "_guide": {
+    "schema": "v3 separates variables into parameters (uncertain, updatable), controls (your decisions), and exogenous (external shocks)",
+    "distributions": "fixed, uniform, triangular, normal, lognormal, bernoulli, poisson, student_t",
+    "expressions": "min, max, abs, round, sqrt, log, exp, binomial(n, p), clamp(val, lo, hi), random()",
+    "safety": "chance_constraints bound P(bad event); cvar_constraints bound expected tail loss"
+  },
+
+  "parameters": {
+    "conversion_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.10, "mode": 0.25, "high": 0.50},
+      "calibration": {
+        "source": "Your data source or reasoning here",
+        "updatable": true,
+        "update_method": "Beta-Binomial conjugate after observing actual conversions"
+      }
+    }
+  },
+
+  "controls": {
+    "monthly_budget": {
+      "distribution": "fixed",
+      "params": {"value": 2000},
+      "calibration": {"source": "Operator actual spend"}
+    }
+  },
+
+  "exogenous": {
+    "demand": {
+      "distribution": "triangular",
+      "params": {"low": 5, "mode": 20, "high": 50},
+      "calibration": {"source": "Market estimate"}
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0
+  },
+
+  "step_logic": [
+    {"target": "sales",       "expr": "binomial(round(demand), conversion_rate)"},
+    {"target": "revenue",     "expr": "sales * 100"},
+    {"target": "costs",       "expr": "monthly_budget"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue": "cumulative_revenue + revenue",
+    "cumulative_costs":   "cumulative_costs + costs",
+    "net_position":       "cumulative_revenue - cumulative_costs"
+  },
+
+  "metrics": {
+    "total_revenue": {"expr": "cumulative_revenue", "format": "dollar"},
+    "total_profit":  {"expr": "net_position",       "format": "dollar"},
+    "total_sales":   {"expr": "cumulative_revenue / 100", "format": "number"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_profit",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.20,
+        "rationale": "No more than 20% chance of ending in the red"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "net_position",
+        "alpha": 0.10,
+        "min_cvar": -10000,
+        "rationale": "Worst 10% of outcomes must not exceed $10k loss"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, total_revenue_median / 500)", "weight": 0.5, "name": "revenue"},
+      {"expr": "max(0, 100 - total_profit_p10 * -0.01)", "weight": 0.5, "name": "safety"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "parameters.conversion_rate.params.mode", "range": [0.10, 0.60]},
+    {"path": "controls.monthly_budget.params.value",   "range": [500, 5000]}
+  ]
+}
