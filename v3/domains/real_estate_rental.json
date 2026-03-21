@@ -1,0 +1,183 @@
+{
+  "name": "Rental Property Cash Flow (5-Year)",
+  "description": "Models a single residential rental property over 60 months: rent collection, vacancy, maintenance surprises, property appreciation, and mortgage payments. Answers: Does this property cash-flow, and what's the real return after expenses?",
+  "n_simulations": 5000,
+  "n_steps": 60,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Should I buy this rental property, and at what price does it stop making sense?",
+    "key_levers": "Purchase price (down payment), rent amount, and your maintenance reserve are the decisions. Vacancy and repair costs are the risks.",
+    "what_good_looks_like": "Positive cash flow from month 1, total return > 8% annualized including appreciation, and less than 10% chance of negative cash flow in any year."
+  },
+
+  "parameters": {
+    "vacancy_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.03, "mode": 0.07, "high": 0.15},
+      "calibration": {
+        "source": "Census Bureau: national residential vacancy rate 5-8%; higher in secondary markets",
+        "updatable": true
+      }
+    },
+    "annual_appreciation": {
+      "distribution": "normal",
+      "params": {"mean": 0.035, "std": 0.03, "min": -0.10, "max": 0.15},
+      "calibration": {
+        "source": "FHFA House Price Index: 3-5% long-run average, but wide variance by market"
+      }
+    },
+    "annual_rent_growth": {
+      "distribution": "triangular",
+      "params": {"low": 0.00, "mode": 0.03, "high": 0.06},
+      "calibration": {
+        "source": "BLS CPI Rent component: 2-4% average, lagging home prices"
+      }
+    },
+    "major_repair_prob": {
+      "distribution": "fixed",
+      "params": {"value": 0.08},
+      "calibration": {
+        "source": "Probability of a major repair ($2k-$10k) in any given month; ~1/year on average"
+      }
+    },
+    "major_repair_cost": {
+      "distribution": "lognormal",
+      "params": {"median": 3000, "spread": 0.8, "min": 500, "max": 15000},
+      "calibration": {
+        "source": "HomeAdvisor: HVAC $3-7k, roof $5-12k, plumbing $1-4k"
+      }
+    }
+  },
+
+  "controls": {
+    "purchase_price": {
+      "distribution": "fixed",
+      "params": {"value": 250000},
+      "calibration": {"source": "Property listing price"}
+    },
+    "down_payment_pct": {
+      "distribution": "fixed",
+      "params": {"value": 0.20},
+      "calibration": {"source": "Standard 20% down for investment property"}
+    },
+    "mortgage_rate": {
+      "distribution": "fixed",
+      "params": {"value": 0.07},
+      "calibration": {"source": "Current 30yr investment property rate"}
+    },
+    "monthly_rent": {
+      "distribution": "fixed",
+      "params": {"value": 1800},
+      "calibration": {"source": "Market rent for comparable properties"}
+    },
+    "monthly_insurance": {
+      "distribution": "fixed",
+      "params": {"value": 150},
+      "calibration": {"source": "Landlord policy quote"}
+    },
+    "monthly_property_tax": {
+      "distribution": "fixed",
+      "params": {"value": 250},
+      "calibration": {"source": "Annual tax / 12; varies hugely by state"}
+    },
+    "maintenance_reserve_pct": {
+      "distribution": "fixed",
+      "params": {"value": 0.10},
+      "calibration": {"source": "Set aside 10% of rent for routine maintenance"}
+    }
+  },
+
+  "exogenous": {},
+
+  "initial_state": {
+    "property_value": 250000,
+    "loan_balance": 200000,
+    "cumulative_cash_flow": 0,
+    "cumulative_rent": 0,
+    "cumulative_costs": 0,
+    "total_repairs": 0,
+    "months_vacant": 0,
+    "current_rent": 1800
+  },
+
+  "step_logic": [
+    {"target": "loan_amount",       "expr": "purchase_price * (1 - down_payment_pct)"},
+    {"target": "monthly_mortgage",  "expr": "loan_amount * (mortgage_rate / 12) / (1 - (1 + mortgage_rate / 12) ** -360)"},
+    {"target": "is_occupied",       "expr": "1 if random() > vacancy_rate else 0"},
+    {"target": "rent_collected",    "expr": "current_rent * is_occupied"},
+    {"target": "rent_adj",          "expr": "current_rent * (1 + annual_rent_growth / 12)"},
+    {"target": "routine_maint",     "expr": "current_rent * maintenance_reserve_pct"},
+    {"target": "has_major_repair",  "expr": "1 if random() < major_repair_prob else 0"},
+    {"target": "repair_cost",       "expr": "major_repair_cost * has_major_repair"},
+    {"target": "total_monthly_cost","expr": "monthly_mortgage + monthly_insurance + monthly_property_tax + routine_maint + repair_cost"},
+    {"target": "net_cash_flow",     "expr": "rent_collected - total_monthly_cost"},
+    {"target": "monthly_appreciation", "expr": "property_value * (annual_appreciation / 12)"},
+    {"target": "new_property_value","expr": "property_value + monthly_appreciation"}
+  ],
+
+  "accumulators": {
+    "property_value":       "new_property_value",
+    "current_rent":         "rent_adj",
+    "cumulative_cash_flow": "cumulative_cash_flow + net_cash_flow",
+    "cumulative_rent":      "cumulative_rent + rent_collected",
+    "cumulative_costs":     "cumulative_costs + total_monthly_cost",
+    "total_repairs":        "total_repairs + repair_cost",
+    "months_vacant":        "months_vacant + (1 - is_occupied)"
+  },
+
+  "metrics": {
+    "total_cash_flow":      {"expr": "cumulative_cash_flow",                        "format": "dollar"},
+    "property_equity":      {"expr": "property_value - loan_balance",               "format": "dollar"},
+    "total_return":         {"expr": "cumulative_cash_flow + (property_value - purchase_price)", "format": "dollar"},
+    "annualized_roi":       {"expr": "(cumulative_cash_flow + property_value - purchase_price) / (purchase_price * down_payment_pct) / 5", "format": "percent"},
+    "total_rent_collected": {"expr": "cumulative_rent",                             "format": "dollar"},
+    "total_repair_costs":   {"expr": "total_repairs",                               "format": "dollar"},
+    "vacancy_months":       {"expr": "months_vacant",                               "format": "number"},
+    "monthly_cash_flow_avg":{"expr": "cumulative_cash_flow / 60",                   "format": "dollar"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_cash_flow",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.20,
+        "rationale": "No more than 20% chance of negative total cash flow over 5 years"
+      },
+      {
+        "metric": "annualized_roi",
+        "condition": "below",
+        "threshold": 0.04,
+        "max_prob": 0.30,
+        "rationale": "At least 70% chance of beating a 4% savings account"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "total_cash_flow",
+        "alpha": 0.10,
+        "min_cvar": -30000,
+        "rationale": "Worst 10% of scenarios: cash drain must not exceed $30k over 5 years"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, annualized_roi_median * 500)",                "weight": 0.35, "name": "return"},
+      {"expr": "min(100, monthly_cash_flow_avg_median / 5 + 50)",      "weight": 0.25, "name": "cash_flow"},
+      {"expr": "max(0, 100 - vacancy_months_median * 3)",              "weight": 0.20, "name": "occupancy"},
+      {"expr": "min(100, property_equity_median / 1000)",              "weight": 0.20, "name": "equity"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.monthly_rent.params.value",             "range": [1200, 3000]},
+    {"path": "controls.purchase_price.params.value",           "range": [150000, 400000]},
+    {"path": "controls.down_payment_pct.params.value",         "range": [0.15, 0.30]},
+    {"path": "controls.maintenance_reserve_pct.params.value",  "range": [0.05, 0.20]}
+  ]
+}

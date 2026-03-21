@@ -1,0 +1,190 @@
+{
+  "name": "Indie SaaS — MRR Growth & Runway",
+  "description": "Models a bootstrapped SaaS product over 24 months: subscriber acquisition, churn, expansion revenue, and cash runway. Answers: When do I hit ramen profitability? What's my runway if growth stalls?",
+  "n_simulations": 5000,
+  "n_steps": 24,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Should I go full-time on this SaaS, and how much runway do I need?",
+    "key_levers": "Pricing, acquisition spend, and churn rate are the three things you can actually influence.",
+    "what_good_looks_like": "Positive cash flow within 18 months, runway never drops below 3 months of burn."
+  },
+
+  "parameters": {
+    "monthly_churn_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.02, "mode": 0.05, "high": 0.12},
+      "calibration": {
+        "source": "Baremetrics Open Benchmarks: median monthly churn for sub-$10k MRR SaaS is 5-8%",
+        "updatable": true,
+        "update_method": "Beta-Binomial conjugate from observed monthly cancellations"
+      }
+    },
+    "organic_signup_rate": {
+      "distribution": "triangular",
+      "params": {"low": 5, "mode": 15, "high": 40},
+      "calibration": {
+        "source": "Indie Hackers revenue milestones: 10-30 signups/month typical for early-stage with content marketing",
+        "updatable": true
+      }
+    },
+    "paid_conversion_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.02, "mode": 0.05, "high": 0.10},
+      "calibration": {
+        "source": "ProfitWell: trial-to-paid conversion 3-8% for self-serve SaaS"
+      }
+    },
+    "expansion_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.00, "mode": 0.02, "high": 0.06},
+      "calibration": {
+        "source": "Percentage of existing customers upgrading per month; 2-5% for products with usage tiers"
+      }
+    }
+  },
+
+  "controls": {
+    "price_per_seat": {
+      "distribution": "fixed",
+      "params": {"value": 29},
+      "calibration": {"source": "Your monthly subscription price"}
+    },
+    "monthly_ad_spend": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Google/Meta ad budget"}
+    },
+    "cost_per_lead": {
+      "distribution": "fixed",
+      "params": {"value": 12},
+      "calibration": {"source": "Blended CAC from ad platforms; $8-$20 typical for B2B SaaS"}
+    },
+    "monthly_infra_cost": {
+      "distribution": "fixed",
+      "params": {"value": 200},
+      "calibration": {"source": "Hosting, email, monitoring — scales with customers"}
+    },
+    "monthly_fixed_costs": {
+      "distribution": "fixed",
+      "params": {"value": 3000},
+      "calibration": {"source": "Your living costs + tools + subscriptions"}
+    },
+    "starting_cash": {
+      "distribution": "fixed",
+      "params": {"value": 25000},
+      "calibration": {"source": "Cash in the bank when you start"}
+    }
+  },
+
+  "exogenous": {
+    "signup_growth_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.98, "mode": 1.03, "high": 1.08},
+      "calibration": {
+        "source": "Month-over-month organic growth multiplier; >1 means word-of-mouth is working"
+      }
+    },
+    "seasonal_factor": {
+      "distribution": "uniform",
+      "params": {"low": 0.85, "high": 1.15},
+      "calibration": {
+        "source": "Monthly noise from seasonality, holidays, viral moments"
+      }
+    }
+  },
+
+  "initial_state": {
+    "subscribers": 10,
+    "mrr": 290,
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "cash": 25000,
+    "peak_subscribers": 10,
+    "months_negative": 0
+  },
+
+  "step_logic": [
+    {"target": "growth_mult",       "expr": "signup_growth_rate ** _step"},
+    {"target": "organic_leads",     "expr": "round(organic_signup_rate * growth_mult * seasonal_factor)"},
+    {"target": "paid_leads",        "expr": "round(monthly_ad_spend / cost_per_lead)"},
+    {"target": "total_leads",       "expr": "organic_leads + paid_leads"},
+    {"target": "new_subs",          "expr": "binomial(round(total_leads), paid_conversion_rate)"},
+    {"target": "churned",           "expr": "binomial(round(subscribers), monthly_churn_rate)"},
+    {"target": "expanded",          "expr": "binomial(round(subscribers), expansion_rate)"},
+    {"target": "net_new",           "expr": "new_subs - churned + expanded"},
+    {"target": "new_subscriber_count", "expr": "max(0, subscribers + net_new)"},
+    {"target": "new_mrr",           "expr": "new_subscriber_count * price_per_seat"},
+    {"target": "monthly_revenue",   "expr": "new_mrr"},
+    {"target": "monthly_costs",     "expr": "monthly_fixed_costs + monthly_ad_spend + monthly_infra_cost"},
+    {"target": "net_income",        "expr": "monthly_revenue - monthly_costs"},
+    {"target": "new_cash",          "expr": "cash + net_income"},
+    {"target": "is_negative",       "expr": "1 if net_income < 0 else 0"}
+  ],
+
+  "accumulators": {
+    "subscribers":       "new_subscriber_count",
+    "mrr":               "new_mrr",
+    "cumulative_revenue":"cumulative_revenue + monthly_revenue",
+    "cumulative_costs":  "cumulative_costs + monthly_costs",
+    "cash":              "new_cash",
+    "peak_subscribers":  "max(peak_subscribers, new_subscriber_count)",
+    "months_negative":   "months_negative + is_negative"
+  },
+
+  "metrics": {
+    "final_mrr":           {"expr": "mrr",                                    "format": "dollar"},
+    "final_subscribers":   {"expr": "subscribers",                            "format": "number"},
+    "total_revenue":       {"expr": "cumulative_revenue",                     "format": "dollar"},
+    "total_profit":        {"expr": "cumulative_revenue - cumulative_costs",  "format": "dollar"},
+    "ending_cash":         {"expr": "cash",                                   "format": "dollar"},
+    "months_to_profit":    {"expr": "months_negative",                        "format": "number"},
+    "ltv_estimate":        {"expr": "price_per_seat / monthly_churn_rate if monthly_churn_rate > 0 else 0", "format": "dollar"},
+    "subscriber_churn_pct":{"expr": "1 - (subscribers / peak_subscribers) if peak_subscribers > 0 else 0", "format": "percent"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "ending_cash",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.15,
+        "rationale": "No more than 15% chance of running out of cash in 24 months"
+      },
+      {
+        "metric": "final_mrr",
+        "condition": "below",
+        "threshold": 3000,
+        "max_prob": 0.25,
+        "rationale": "At least 75% chance of reaching $3k MRR (ramen profitability)"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "ending_cash",
+        "alpha": 0.10,
+        "min_cvar": -15000,
+        "rationale": "In the worst 10% of scenarios, cash deficit must not exceed $15k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, final_mrr_median / 100)",           "weight": 0.30, "name": "mrr_growth"},
+      {"expr": "min(100, ending_cash_median / 300)",          "weight": 0.25, "name": "runway"},
+      {"expr": "max(0, 100 - months_to_profit_median * 5)",   "weight": 0.25, "name": "time_to_profit"},
+      {"expr": "min(100, final_subscribers_median / 2)",       "weight": 0.20, "name": "scale"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.price_per_seat.params.value",     "range": [9, 99]},
+    {"path": "controls.monthly_ad_spend.params.value",   "range": [0, 3000]},
+    {"path": "parameters.monthly_churn_rate.params.mode", "range": [0.01, 0.10]},
+    {"path": "parameters.organic_signup_rate.params.mode","range": [5, 50]}
+  ]
+}

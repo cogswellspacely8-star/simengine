@@ -6,18 +6,28 @@
 <title>SimEngine</title>
 <style>
 :root {
-  --bg: #0a0e17;
-  --surface: #111827;
-  --surface2: #1a2236;
-  --border: #2a3550;
+  --bg: #08090d;
+  --surface: #0f1219;
+  --surface2: #161b27;
+  --surface3: #1c2333;
+  --border: #252d40;
+  --border2: #334155;
   --text: #e2e8f0;
   --text2: #94a3b8;
+  --text3: #64748b;
   --accent: #3b82f6;
   --accent2: #60a5fa;
+  --accent3: #93bbfc;
   --green: #22c55e;
+  --green2: #16a34a;
   --red: #ef4444;
+  --red2: #dc2626;
   --amber: #f59e0b;
-  --font: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  --amber2: #d97706;
+  --purple: #a78bfa;
+  --cyan: #22d3ee;
+  --font: -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  --mono: 'SF Mono', 'Fira Code', 'JetBrains Mono', 'Cascadia Code', monospace;
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -28,167 +38,254 @@ body {
   color: var(--text);
   min-height: 100vh;
   font-size: 13px;
-  line-height: 1.5;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
 }
 
-/* Header */
+/* ── Header ── */
 header {
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  padding: 12px 24px;
+  padding: 10px 24px;
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
 }
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-icon {
+  width: 24px;
+  height: 24px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-icon svg { width: 14px; height: 14px; fill: white; }
 
 header h1 {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--accent2);
-  letter-spacing: 1px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
 }
 
-header .tag {
-  font-size: 10px;
-  padding: 2px 8px;
-  background: var(--accent);
-  color: white;
+.header-tag {
+  font-size: 9px;
+  padding: 2px 6px;
+  background: var(--surface3);
+  color: var(--accent2);
   border-radius: 4px;
   font-weight: 600;
+  font-family: var(--mono);
+  border: 1px solid var(--border);
 }
 
-/* Layout */
+.header-spacer { flex: 1; }
+
+.header-status {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--mono);
+}
+
+/* ── Layout ── */
 .app {
   display: grid;
-  grid-template-columns: 320px 1fr;
-  min-height: calc(100vh - 49px);
+  grid-template-columns: 340px 1fr;
+  min-height: calc(100vh - 45px);
 }
 
-/* Sidebar */
+/* ── Sidebar ── */
 .sidebar {
   background: var(--surface);
   border-right: 1px solid var(--border);
-  padding: 16px;
   overflow-y: auto;
+  display: flex;
+  flex-direction: column;
 }
 
-.sidebar h2 {
-  font-size: 11px;
+.sidebar-section {
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-section:last-child { border-bottom: none; }
+
+.section-title {
+  font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 1.5px;
-  color: var(--text2);
-  margin-bottom: 12px;
+  color: var(--text3);
+  margin-bottom: 10px;
+  font-weight: 600;
 }
 
+/* Domain cards */
 .domain-card {
-  padding: 10px 12px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  margin-bottom: 8px;
+  border-radius: 8px;
+  margin-bottom: 6px;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.2s;
+  position: relative;
 }
 
-.domain-card:hover { border-color: var(--accent); }
-.domain-card.active { border-color: var(--accent); background: var(--surface2); }
+.domain-card:hover {
+  border-color: var(--border2);
+  background: var(--surface2);
+}
 
-.domain-card .name {
+.domain-card.active {
+  border-color: var(--accent);
+  background: rgba(59, 130, 246, 0.06);
+}
+
+.domain-card .dc-name {
   font-size: 12px;
   font-weight: 600;
   color: var(--text);
+  margin-bottom: 3px;
+  line-height: 1.3;
+}
+
+.domain-card .dc-desc {
+  font-size: 10px;
+  color: var(--text3);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.domain-card .dc-meta {
+  font-size: 9px;
+  color: var(--text3);
+  margin-top: 6px;
+  font-family: var(--mono);
+  display: flex;
+  gap: 10px;
+}
+
+/* Parameter editor */
+.param-group {
+  margin-bottom: 14px;
+}
+
+.param-group-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--accent2);
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+
+.param-item {
+  margin-bottom: 10px;
+}
+
+.param-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   margin-bottom: 4px;
 }
 
-.domain-card .desc {
-  font-size: 10px;
+.param-label {
+  font-size: 11px;
   color: var(--text2);
-  line-height: 1.4;
 }
 
-.domain-card .meta {
-  font-size: 10px;
-  color: var(--text2);
-  margin-top: 6px;
-  display: flex;
-  gap: 12px;
-}
-
-/* Controls section */
-.controls-section {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.param-group {
-  margin-bottom: 16px;
-}
-
-.param-group h3 {
-  font-size: 10px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+.param-value-display {
+  font-size: 11px;
+  font-family: var(--mono);
   color: var(--accent2);
-  margin-bottom: 8px;
-}
-
-.param-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.param-row label {
-  font-size: 11px;
-  color: var(--text2);
-}
-
-.param-row input {
-  width: 80px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 3px 6px;
-  border-radius: 4px;
-  font-family: var(--font);
-  font-size: 11px;
+  font-weight: 600;
+  min-width: 60px;
   text-align: right;
 }
 
-.param-row input:focus {
+.param-slider {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
   outline: none;
-  border-color: var(--accent);
+  cursor: pointer;
 }
 
-/* Run controls */
-.run-controls {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
+.param-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  box-shadow: 0 0 0 1px var(--accent);
+  cursor: pointer;
 }
 
-.sim-setting {
+.param-slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--surface);
+  cursor: pointer;
+}
+
+.param-range-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 9px;
+  color: var(--text3);
+  font-family: var(--mono);
+  margin-top: 2px;
+}
+
+/* Sim controls */
+.sim-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
 }
 
-.sim-setting label {
+.sim-row label {
   font-size: 11px;
   color: var(--text2);
 }
 
-.sim-setting input, .sim-setting select {
+.sim-input {
   width: 100px;
   background: var(--bg);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-family: var(--font);
+  padding: 5px 8px;
+  border-radius: 6px;
+  font-family: var(--mono);
   font-size: 11px;
+  text-align: right;
+}
+
+.sim-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .btn {
@@ -196,329 +293,477 @@ header .tag {
   width: 100%;
   padding: 10px;
   border: none;
-  border-radius: 6px;
+  border-radius: 8px;
   font-family: var(--font);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.15s;
-  margin-top: 12px;
+  transition: all 0.2s;
+  margin-top: 8px;
+  position: relative;
 }
 
-.btn-primary {
-  background: var(--accent);
+.btn-run {
+  background: linear-gradient(135deg, var(--accent), #2563eb);
   color: white;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
 }
 
-.btn-primary:hover { background: var(--accent2); }
-.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-run:hover { box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4); transform: translateY(-1px); }
+.btn-run:active { transform: translateY(0); }
+.btn-run:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
 
-.btn-secondary {
+.btn-evolve {
   background: var(--surface2);
   color: var(--text);
   border: 1px solid var(--border);
 }
 
-.btn-secondary:hover { border-color: var(--accent); }
+.btn-evolve:hover { border-color: var(--purple); color: var(--purple); }
+.btn-evolve:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* Main content */
+.btn-compare {
+  background: none;
+  color: var(--text3);
+  border: 1px dashed var(--border);
+  font-size: 11px;
+  padding: 7px;
+}
+
+.btn-compare:hover { border-color: var(--amber); color: var(--amber); }
+.btn-compare.pinned { border-style: solid; border-color: var(--amber); color: var(--amber); }
+
+/* ── Main ── */
 .main {
-  padding: 24px;
+  padding: 24px 28px;
   overflow-y: auto;
+  max-height: calc(100vh - 45px);
 }
 
 .empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: 60vh;
-  color: var(--text2);
-  font-size: 14px;
+  height: 70vh;
+  text-align: center;
 }
 
-/* Results grid */
-.results-header {
+.empty-icon {
+  width: 64px;
+  height: 64px;
+  background: var(--surface2);
+  border-radius: 16px;
   display: flex;
   align-items: center;
+  justify-content: center;
+  margin-bottom: 16px;
+  border: 1px solid var(--border);
+}
+
+.empty-icon svg { width: 28px; height: 28px; stroke: var(--text3); fill: none; }
+
+.empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+
+.empty-sub {
+  font-size: 12px;
+  color: var(--text3);
+  max-width: 300px;
+  line-height: 1.5;
+}
+
+/* ── Context banner ── */
+.context-banner {
+  background: linear-gradient(135deg, rgba(59,130,246,0.08), rgba(167,139,250,0.05));
+  border: 1px solid rgba(59,130,246,0.15);
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.context-decision {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  line-height: 1.4;
+}
+
+.context-levers {
+  font-size: 12px;
+  color: var(--text2);
+  line-height: 1.5;
+}
+
+/* ── Results header ── */
+.results-header {
+  display: flex;
+  align-items: baseline;
   justify-content: space-between;
   margin-bottom: 20px;
 }
 
 .results-header h2 {
-  font-size: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.3px;
+}
+
+.results-meta {
+  font-size: 11px;
+  color: var(--text3);
+  font-family: var(--mono);
+}
+
+/* ── Risk gauge ── */
+.risk-section {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.risk-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.risk-card.wide { grid-column: span 2; }
+
+.risk-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text3);
+  margin-bottom: 10px;
   font-weight: 600;
 }
 
-.results-header .meta {
-  font-size: 11px;
-  color: var(--text2);
+.gauge-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
 }
 
+.gauge-ring {
+  width: 80px;
+  height: 80px;
+  position: relative;
+}
+
+.gauge-ring svg { width: 80px; height: 80px; transform: rotate(-90deg); }
+.gauge-ring .bg { fill: none; stroke: var(--border); stroke-width: 6; }
+.gauge-ring .fg { fill: none; stroke-width: 6; stroke-linecap: round; transition: stroke-dashoffset 0.8s ease; }
+.gauge-ring .label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  font-family: var(--mono);
+}
+
+.gauge-details { flex: 1; }
+
+.gauge-detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+
+.gauge-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Safety rows */
+.safety-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.safety-row:last-child { border-bottom: none; }
+
+.safety-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--mono);
+  letter-spacing: 0.5px;
+}
+
+.safety-badge.pass { background: rgba(34,197,94,0.12); color: var(--green); }
+.safety-badge.fail { background: rgba(239,68,68,0.12); color: var(--red); }
+
+/* ── Stat cards ── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 12px;
-  margin-bottom: 24px;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
 }
 
 .stat-card {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
+  border-radius: 10px;
+  padding: 14px 16px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
 }
 
-.stat-card .label {
+.stat-card:hover { border-color: var(--border2); }
+.stat-card.active { border-color: var(--accent); background: rgba(59,130,246,0.04); }
+
+.stat-label {
   font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text2);
-  margin-bottom: 8px;
+  letter-spacing: 0.8px;
+  color: var(--text3);
+  margin-bottom: 6px;
+  font-weight: 600;
 }
 
-.stat-card .value {
-  font-size: 22px;
+.stat-value {
+  font-size: 24px;
   font-weight: 700;
-  color: var(--accent2);
-  margin-bottom: 4px;
+  font-family: var(--mono);
+  letter-spacing: -0.5px;
+  margin-bottom: 2px;
 }
 
-.stat-card .sub {
-  font-size: 11px;
-  color: var(--text2);
+.stat-value.positive { color: var(--green); }
+.stat-value.negative { color: var(--red); }
+.stat-value.neutral { color: var(--accent2); }
+
+.stat-sub {
+  font-size: 10px;
+  color: var(--text3);
+  font-family: var(--mono);
 }
 
-.stat-card .range {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  font-size: 11px;
-}
-
-.range-bar {
-  flex: 1;
-  height: 6px;
-  background: var(--bg);
-  border-radius: 3px;
-  position: relative;
-  overflow: hidden;
-}
-
-.range-fill {
+.stat-delta {
   position: absolute;
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  opacity: 0.6;
+  top: 14px;
+  right: 14px;
+  font-size: 10px;
+  font-family: var(--mono);
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 4px;
 }
 
-.range-median {
-  position: absolute;
-  height: 100%;
-  width: 2px;
-  background: var(--accent2);
-  border-radius: 1px;
-}
+.stat-delta.up { color: var(--green); background: rgba(34,197,94,0.1); }
+.stat-delta.down { color: var(--red); background: rgba(239,68,68,0.1); }
 
-/* Safety panel */
-.safety-panel {
+/* ── Narrative ── */
+.narrative-section {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
-
-.safety-panel h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 20px;
+  line-height: 1.7;
+  font-size: 13px;
   color: var(--text2);
-  margin-bottom: 12px;
 }
 
-.safety-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
-  font-size: 12px;
-}
+.narrative-section strong { color: var(--text); }
 
-.safety-badge {
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.safety-badge.pass { background: rgba(34,197,94,0.15); color: var(--green); }
-.safety-badge.fail { background: rgba(239,68,68,0.15); color: var(--red); }
-
-/* Trajectory chart */
+/* ── Charts ── */
 .chart-section {
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 16px;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
-.chart-section h3 {
-  font-size: 11px;
+.chart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.chart-title {
+  font-size: 10px;
   text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text2);
-  margin-bottom: 4px;
+  letter-spacing: 1.2px;
+  color: var(--text3);
+  font-weight: 600;
 }
 
 .chart-tabs {
   display: flex;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 4px;
 }
 
 .chart-tab {
-  padding: 4px 12px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
   font-size: 10px;
-  font-family: var(--font);
+  font-family: var(--mono);
   cursor: pointer;
-  background: var(--bg);
-  color: var(--text2);
-  border: 1px solid var(--border);
+  color: var(--text3);
   transition: all 0.15s;
+  border: 1px solid transparent;
 }
 
-.chart-tab.active {
-  background: var(--accent);
-  color: white;
-  border-color: var(--accent);
-}
+.chart-tab:hover { color: var(--text2); background: var(--surface2); }
+.chart-tab.active { color: var(--accent2); background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2); }
 
-canvas {
-  width: 100%;
-  height: 280px;
-}
+canvas { width: 100%; display: block; }
 
-/* Fitness panel */
-.fitness-panel {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
-}
-
-.fitness-panel h3 {
+/* ── Evolution ── */
+.evo-gen-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
   font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+  font-family: var(--mono);
   color: var(--text2);
-  margin-bottom: 12px;
 }
 
-.fitness-score {
-  font-size: 36px;
-  font-weight: 700;
-  color: var(--accent2);
-  margin-bottom: 4px;
+.evo-gen-bar {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
 }
 
-/* Evolution results */
-.evo-section {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 16px;
-  margin-bottom: 24px;
+.evo-gen-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s;
 }
 
-.evo-section h3 {
-  font-size: 11px;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  color: var(--text2);
-  margin-bottom: 12px;
-}
-
-/* Spinner */
+/* ── Spinner ── */
 .spinner {
   display: inline-block;
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--border);
-  border-top-color: var(--accent);
+  width: 12px;
+  height: 12px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
   border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  margin-right: 8px;
+  animation: spin 0.5s linear infinite;
+  margin-right: 6px;
   vertical-align: middle;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .app { grid-template-columns: 1fr; }
+  .sidebar { max-height: 50vh; }
+}
 </style>
 </head>
 <body>
 
 <header>
-  <h1>SIMENGINE</h1>
-  <span class="tag">v3</span>
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+    </div>
+    <h1>SimEngine</h1>
+  </div>
+  <span class="header-tag">v3.0</span>
+  <div class="header-spacer"></div>
+  <span class="header-status" id="header-status">Ready</span>
 </header>
 
 <div class="app">
   <aside class="sidebar">
-    <h2>Domains</h2>
-    <div id="domain-list"></div>
+    <div class="sidebar-section" id="domain-section">
+      <div class="section-title">Domains</div>
+      <div id="domain-list"></div>
+    </div>
 
-    <div class="controls-section" id="params-section" style="display:none">
-      <h2>Parameters</h2>
+    <div class="sidebar-section" id="params-section" style="display:none">
+      <div class="section-title">Parameters</div>
       <div id="params-editor"></div>
     </div>
 
-    <div class="run-controls" id="run-section" style="display:none">
-      <h2>Simulation</h2>
-      <div class="sim-setting">
+    <div class="sidebar-section" id="run-section" style="display:none">
+      <div class="section-title">Simulation</div>
+      <div class="sim-row">
         <label>Runs</label>
-        <input type="number" id="n-sims" value="5000" min="100" max="50000" step="100">
+        <input class="sim-input" type="number" id="n-sims" value="5000" min="100" max="50000" step="500">
       </div>
-      <div class="sim-setting">
+      <div class="sim-row">
         <label>Seed</label>
-        <input type="number" id="seed" value="42">
+        <input class="sim-input" type="number" id="seed" value="42">
       </div>
-      <button class="btn btn-primary" id="btn-run" onclick="runSimulation()">Run Simulation</button>
-      <button class="btn btn-secondary" id="btn-evolve" onclick="runEvolution()">Evolve (GA)</button>
+      <button class="btn btn-run" id="btn-run" onclick="runSimulation()">Run Simulation</button>
+      <button class="btn btn-evolve" id="btn-evolve" onclick="runEvolution()">Optimize (Evolutionary)</button>
+      <button class="btn btn-compare" id="btn-compare" onclick="togglePin()">Pin for comparison</button>
     </div>
   </aside>
 
   <main class="main" id="main">
-    <div class="empty-state">Select a domain to begin</div>
+    <div class="empty-state">
+      <div class="empty-icon">
+        <svg viewBox="0 0 24 24" stroke-width="1.5"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <div class="empty-title">Select a domain to begin</div>
+      <div class="empty-sub">Choose a simulation model from the sidebar, adjust parameters, and run Monte Carlo analysis to see the range of possible outcomes.</div>
+    </div>
   </main>
 </div>
 
 <script>
-const API = '';
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
 let currentDomain = null;
 let currentConfig = null;
 let currentResults = null;
+let pinnedResults = null;
+let activeHistogram = null;
+let activeTrajectory = null;
 
-// --- Domain list ---
+// ═══════════════════════════════════════════
+// DOMAIN LIST
+// ═══════════════════════════════════════════
 async function loadDomains() {
-  const res = await fetch(API + '/api/domains');
+  const res = await fetch('/api/domains');
   const domains = await res.json();
-  const el = document.getElementById('domain-list');
-  el.innerHTML = domains.map(d => `
-    <div class="domain-card" onclick="selectDomain('${d.file}')" id="dc-${d.file}">
-      <div class="name">${d.name}</div>
-      <div class="desc">${d.description.slice(0, 120)}</div>
-      <div class="meta">
+  document.getElementById('domain-list').innerHTML = domains.map(d => `
+    <div class="domain-card" onclick="selectDomain('${d.file}')" id="dc-${CSS.escape(d.file)}">
+      <div class="dc-name">${esc(d.name)}</div>
+      <div class="dc-desc">${esc(d.description)}</div>
+      <div class="dc-meta">
         <span>${d.n_steps} ${d.step_label}s</span>
-        <span>${d.n_simulations.toLocaleString()} sims</span>
+        <span>${d.n_simulations.toLocaleString()} runs</span>
       </div>
     </div>
   `).join('');
@@ -526,12 +771,14 @@ async function loadDomains() {
 
 async function selectDomain(file) {
   document.querySelectorAll('.domain-card').forEach(c => c.classList.remove('active'));
-  const card = document.getElementById('dc-' + file);
+  const card = document.getElementById('dc-' + CSS.escape(file));
   if (card) card.classList.add('active');
 
   currentDomain = file;
-  const res = await fetch(API + '/api/domain/' + file);
+  const res = await fetch('/api/domain/' + file);
   currentConfig = await res.json();
+  currentResults = null;
+  pinnedResults = null;
 
   document.getElementById('n-sims').value = currentConfig.n_simulations || 5000;
   if (currentConfig.seed) document.getElementById('seed').value = currentConfig.seed;
@@ -539,40 +786,75 @@ async function selectDomain(file) {
   buildParamEditor();
   document.getElementById('params-section').style.display = '';
   document.getElementById('run-section').style.display = '';
-  document.getElementById('main').innerHTML = `<div class="empty-state">Configure and run "${currentConfig.name}"</div>`;
+  document.getElementById('btn-compare').classList.remove('pinned');
+  document.getElementById('btn-compare').textContent = 'Pin for comparison';
+
+  // Show context if available
+  const ctx = currentConfig.context;
+  if (ctx && ctx.decision) {
+    document.getElementById('main').innerHTML = `
+      <div class="context-banner">
+        <div class="context-decision">${esc(ctx.decision)}</div>
+        ${ctx.key_levers ? `<div class="context-levers">${esc(ctx.key_levers)}</div>` : ''}
+      </div>
+      <div class="empty-state" style="height:50vh">
+        <div class="empty-title">Ready to simulate</div>
+        <div class="empty-sub">Adjust the parameters in the sidebar and click Run Simulation to see the range of possible outcomes.</div>
+      </div>
+    `;
+  } else {
+    document.getElementById('main').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-title">Ready to simulate</div>
+        <div class="empty-sub">Adjust parameters and click Run Simulation.</div>
+      </div>
+    `;
+  }
 }
 
+// ═══════════════════════════════════════════
+// PARAMETER EDITOR (Sliders)
+// ═══════════════════════════════════════════
 function buildParamEditor() {
   const el = document.getElementById('params-editor');
   let html = '';
+  const sections = [];
 
-  const sections = [
-    ['Parameters', currentConfig.parameters || {}],
-    ['Controls', currentConfig.controls || {}],
-    ['Exogenous', currentConfig.exogenous || {}],
-  ];
-
-  // Also handle flat "variables" for backward compat
   if (currentConfig.variables && !currentConfig.parameters) {
-    sections.length = 0;
-    sections.push(['Variables', currentConfig.variables]);
+    sections.push(['Variables', 'variables', currentConfig.variables]);
+  } else {
+    if (currentConfig.parameters && Object.keys(currentConfig.parameters).length)
+      sections.push(['Parameters', 'parameters', currentConfig.parameters]);
+    if (currentConfig.controls && Object.keys(currentConfig.controls).length)
+      sections.push(['Controls', 'controls', currentConfig.controls]);
+    if (currentConfig.exogenous && Object.keys(currentConfig.exogenous).length)
+      sections.push(['Exogenous', 'exogenous', currentConfig.exogenous]);
   }
 
-  for (const [title, vars] of sections) {
-    if (!Object.keys(vars).length) continue;
-    html += `<div class="param-group"><h3>${title}</h3>`;
+  for (const [title, cat, vars] of sections) {
+    html += `<div class="param-group"><div class="param-group-title">${title}</div>`;
     for (const [name, def] of Object.entries(vars)) {
       const params = def.params || {};
       for (const [pk, pv] of Object.entries(params)) {
         if (typeof pv !== 'number') continue;
-        const cat = title.toLowerCase();
-        const path = (currentConfig.variables && !currentConfig.parameters)
-          ? `variables.${name}.params.${pk}`
-          : `${cat}.${name}.params.${pk}`;
-        html += `<div class="param-row">
-          <label>${name}.${pk}</label>
-          <input type="number" step="any" value="${pv}" data-path="${path}">
-        </div>`;
+        const path = `${cat}.${name}.params.${pk}`;
+        const info = getSliderRange(name, pk, pv, def.distribution);
+        html += `
+          <div class="param-item">
+            <div class="param-header">
+              <span class="param-label">${name.replace(/_/g, ' ')}<span style="color:var(--text3)"> .${pk}</span></span>
+              <span class="param-value-display" id="pv-${CSS.escape(path)}">${fmtParam(pv, pk)}</span>
+            </div>
+            <input type="range" class="param-slider"
+              data-path="${path}" data-pk="${pk}"
+              min="${info.min}" max="${info.max}" step="${info.step}" value="${pv}"
+              oninput="onSlider(this)">
+            <div class="param-range-labels">
+              <span>${fmtParam(info.min, pk)}</span>
+              <span>${fmtParam(info.max, pk)}</span>
+            </div>
+          </div>
+        `;
       }
     }
     html += '</div>';
@@ -580,30 +862,69 @@ function buildParamEditor() {
   el.innerHTML = html;
 }
 
+function getSliderRange(name, pk, val, dist) {
+  // Heuristic ranges based on value magnitude
+  let min, max, step;
+  if (val === 0) {
+    min = 0; max = 100; step = 1;
+  } else if (val >= 100000) {
+    min = val * 0.3; max = val * 2; step = Math.round(val * 0.01);
+  } else if (val >= 1000) {
+    min = Math.max(0, val * 0.2); max = val * 3; step = Math.round(val * 0.01);
+  } else if (val >= 100) {
+    min = Math.max(0, val * 0.2); max = val * 3; step = 1;
+  } else if (val >= 1) {
+    min = Math.max(0, val * 0.1); max = val * 4; step = Math.max(0.1, val * 0.01);
+  } else if (val > 0) {
+    min = 0; max = Math.min(1, val * 5); step = 0.001;
+  } else {
+    min = val * 3; max = Math.abs(val * 3); step = Math.abs(val * 0.01) || 0.01;
+  }
+  return { min: round4(min), max: round4(max), step: round4(step) };
+}
+
+function fmtParam(v, pk) {
+  v = parseFloat(v);
+  if (pk === 'value' && v >= 100) return v.toLocaleString(undefined, {maximumFractionDigits: 0});
+  if (v >= 1000) return v.toLocaleString(undefined, {maximumFractionDigits: 0});
+  if (v >= 1) return v.toFixed(Math.abs(v) >= 10 ? 1 : 2);
+  if (v > 0) return v.toFixed(3);
+  return v.toFixed(2);
+}
+
+function onSlider(el) {
+  const path = el.dataset.path;
+  const pk = el.dataset.pk;
+  const val = parseFloat(el.value);
+  const display = document.getElementById('pv-' + CSS.escape(path));
+  if (display) display.textContent = fmtParam(val, pk);
+}
+
 function collectOverrides() {
   const overrides = {};
-  document.querySelectorAll('#params-editor input[data-path]').forEach(input => {
-    const path = input.dataset.path;
-    const val = parseFloat(input.value);
-    if (!isNaN(val)) {
-      // Check if value differs from original
-      const parts = path.split('.');
-      let orig = currentConfig;
-      for (const p of parts) orig = orig?.[p];
-      if (orig !== val) overrides[path] = val;
-    }
+  document.querySelectorAll('.param-slider[data-path]').forEach(slider => {
+    const path = slider.dataset.path;
+    const val = parseFloat(slider.value);
+    if (isNaN(val)) return;
+    const parts = path.split('.');
+    let orig = currentConfig;
+    for (const p of parts) orig = orig?.[p];
+    if (orig !== val) overrides[path] = val;
   });
   return overrides;
 }
 
-// --- Simulation ---
+// ═══════════════════════════════════════════
+// SIMULATION
+// ═══════════════════════════════════════════
 async function runSimulation() {
   const btn = document.getElementById('btn-run');
   btn.disabled = true;
-  btn.innerHTML = '<span class="spinner"></span>Running...';
+  btn.innerHTML = '<span class="spinner"></span>Simulating...';
+  setStatus('Running simulation...');
 
   try {
-    const res = await fetch(API + '/api/simulate', {
+    const res = await fetch('/api/simulate', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -613,25 +934,31 @@ async function runSimulation() {
         seed: parseInt(document.getElementById('seed').value),
       })
     });
-    currentResults = await res.json();
-    if (currentResults.error) throw new Error(currentResults.error);
-    renderResults(currentResults);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    currentResults = data;
+    renderResults(data);
+    setStatus(`${data.n_simulations.toLocaleString()} sims in ${data.elapsed}s`);
   } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="empty-state" style="color:var(--red)">Error: ${e.message}</div>`;
+    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-title" style="color:var(--red)">Error</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+    setStatus('Error');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Run Simulation';
   }
 }
 
-// --- Evolution ---
+// ═══════════════════════════════════════════
+// EVOLUTION
+// ═══════════════════════════════════════════
 async function runEvolution() {
   const btn = document.getElementById('btn-evolve');
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span>Evolving...';
+  setStatus('Running evolution...');
 
   try {
-    const res = await fetch(API + '/api/evolve', {
+    const res = await fetch('/api/evolve', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({
@@ -643,124 +970,390 @@ async function runEvolution() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     renderEvolution(data);
+    setStatus(`Evolution complete in ${data.elapsed}s`);
   } catch(e) {
-    document.getElementById('main').innerHTML = `<div class="empty-state" style="color:var(--red)">Error: ${e.message}</div>`;
+    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-title" style="color:var(--red)">Error</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+    setStatus('Error');
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Evolve (GA)';
+    btn.textContent = 'Optimize (Evolutionary)';
   }
 }
 
-// --- Rendering ---
-function fmt(val, format) {
-  if (format === 'dollar') return '$' + Math.round(val).toLocaleString();
-  if (format === 'percent') return (val * 100).toFixed(1) + '%';
-  return typeof val === 'number' ? val.toFixed(2) : val;
+// ═══════════════════════════════════════════
+// COMPARISON PIN
+// ═══════════════════════════════════════════
+function togglePin() {
+  const btn = document.getElementById('btn-compare');
+  if (pinnedResults) {
+    pinnedResults = null;
+    btn.classList.remove('pinned');
+    btn.textContent = 'Pin for comparison';
+  } else if (currentResults) {
+    pinnedResults = JSON.parse(JSON.stringify(currentResults));
+    btn.classList.add('pinned');
+    btn.textContent = 'Clear pinned baseline';
+  }
 }
 
+// ═══════════════════════════════════════════
+// RENDER RESULTS
+// ═══════════════════════════════════════════
 function renderResults(r) {
-  let html = `
-    <div class="results-header">
-      <h2>${r.domain}</h2>
-      <div class="meta">${r.n_simulations.toLocaleString()} simulations in ${r.elapsed}s</div>
-    </div>
-  `;
+  let html = '';
 
-  // Stats cards
+  // Context banner
+  if (r.context?.decision) {
+    html += `<div class="context-banner">
+      <div class="context-decision">${esc(r.context.decision)}</div>
+      ${r.context.key_levers ? `<div class="context-levers">${esc(r.context.key_levers)}</div>` : ''}
+    </div>`;
+  }
+
+  // Results header
+  html += `<div class="results-header">
+    <h2>${esc(r.domain)}</h2>
+    <span class="results-meta">${r.n_simulations.toLocaleString()} runs &middot; ${r.elapsed}s</span>
+  </div>`;
+
+  // Risk section — gauge + safety
+  html += renderRiskSection(r);
+
+  // Stat cards
   html += '<div class="stats-grid">';
-  for (const [name, s] of Object.entries(r.stats)) {
-    const f = s.format || 'number';
-    const range = s.p90 - s.p10;
-    const medianPos = range > 0 ? ((s.median - s.p10) / range * 100) : 50;
-    html += `
-      <div class="stat-card">
-        <div class="label">${name.replace(/_/g, ' ')}</div>
-        <div class="value">${fmt(s.median, f)}</div>
-        <div class="sub">mean ${fmt(s.mean, f)} | std ${fmt(s.std, f)}</div>
-        <div class="range">
-          <span style="font-size:10px">P10 ${fmt(s.p10, f)}</span>
-          <div class="range-bar">
-            <div class="range-fill" style="left:0;width:100%"></div>
-            <div class="range-median" style="left:${medianPos}%"></div>
-          </div>
-          <span style="font-size:10px">P90 ${fmt(s.p90, f)}</span>
-        </div>
-      </div>
-    `;
+  const metricNames = Object.keys(r.stats);
+  for (const name of metricNames) {
+    const s = r.stats[name];
+    html += renderStatCard(name, s, r);
   }
   html += '</div>';
 
-  // Safety
-  if (r.safety && (r.safety.chance?.length || r.safety.cvar?.length)) {
-    html += '<div class="safety-panel"><h3>Safety Constraints</h3>';
-    for (const c of (r.safety.chance || [])) {
-      const cls = c.passed ? 'pass' : 'fail';
-      html += `<div class="safety-row">
-        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
-        <span>P(${c.metric} ${c.condition} ${c.threshold.toLocaleString()}) = ${(c.actual_prob * 100).toFixed(1)}% (limit ${(c.max_prob * 100).toFixed(1)}%)</span>
-      </div>`;
-    }
-    for (const c of (r.safety.cvar || [])) {
-      const cls = c.passed ? 'pass' : 'fail';
-      html += `<div class="safety-row">
-        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
-        <span>CVaR(${(c.alpha*100).toFixed(0)}%) ${c.metric} = $${Math.round(c.actual_cvar).toLocaleString()} (min $${c.min_cvar.toLocaleString()})</span>
-      </div>`;
-    }
-    html += '</div>';
+  // Narrative
+  if (r.narrative) {
+    const narrativeHtml = r.narrative
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^- /gm, '&bull; ')
+      .replace(/\n\n/g, '<br><br>')
+      .replace(/\n/g, '<br>');
+    html += `<div class="narrative-section">${narrativeHtml}</div>`;
   }
 
-  // Fitness
-  if (r.fitness) {
-    html += `<div class="fitness-panel">
-      <h3>Fitness Score</h3>
-      <div class="fitness-score">${r.fitness.toFixed(1)}</div>
+  // Histogram
+  if (r.histograms && Object.keys(r.histograms).length) {
+    const keys = Object.keys(r.histograms);
+    activeHistogram = keys[0];
+    html += `<div class="chart-section">
+      <div class="chart-header">
+        <span class="chart-title">Outcome Distribution</span>
+        <div class="chart-tabs" id="hist-tabs">
+          ${keys.map((k,i) => `<div class="chart-tab ${i===0?'active':''}" onclick="switchHistogram('${k}', this)">${k.replace(/_/g,' ')}</div>`).join('')}
+        </div>
+      </div>
+      <canvas id="hist-canvas" height="220"></canvas>
     </div>`;
   }
 
   // Trajectories
   if (r.trajectories && Object.keys(r.trajectories).length) {
     const keys = Object.keys(r.trajectories);
+    activeTrajectory = keys[0];
     html += `<div class="chart-section">
-      <h3>Trajectories (P10 / P50 / P90)</h3>
-      <div class="chart-tabs" id="chart-tabs">
-        ${keys.map((k, i) => `<div class="chart-tab ${i === 0 ? 'active' : ''}" onclick="switchChart('${k}')">${k.replace(/_/g, ' ')}</div>`).join('')}
+      <div class="chart-header">
+        <span class="chart-title">Trajectory Over Time (P10 / P50 / P90)</span>
+        <div class="chart-tabs" id="traj-tabs">
+          ${keys.map((k,i) => `<div class="chart-tab ${i===0?'active':''}" onclick="switchTrajectory('${k}', this)">${k.replace(/_/g,' ')}</div>`).join('')}
+        </div>
       </div>
-      <canvas id="trajectory-canvas"></canvas>
+      <canvas id="traj-canvas" height="260"></canvas>
     </div>`;
   }
 
   document.getElementById('main').innerHTML = html;
 
-  // Draw first trajectory
-  if (r.trajectories && Object.keys(r.trajectories).length) {
-    drawTrajectory(Object.keys(r.trajectories)[0]);
+  // Draw charts
+  requestAnimationFrame(() => {
+    if (activeHistogram) drawHistogram(activeHistogram);
+    if (activeTrajectory) drawTrajectory(activeTrajectory);
+  });
+}
+
+// ═══════════════════════════════════════════
+// RISK GAUGE + SAFETY
+// ═══════════════════════════════════════════
+function renderRiskSection(r) {
+  const safety = r.safety || {};
+  const allChance = safety.chance || [];
+  const allCvar = safety.cvar || [];
+  const totalConstraints = allChance.length + allCvar.length;
+  const passed = allChance.filter(c=>c.passed).length + allCvar.filter(c=>c.passed).length;
+  const score = totalConstraints > 0 ? Math.round((passed / totalConstraints) * 100) : 100;
+  const color = score >= 80 ? 'var(--green)' : score >= 50 ? 'var(--amber)' : 'var(--red)';
+
+  const circumference = 2 * Math.PI * 34;
+  const offset = circumference * (1 - score / 100);
+
+  let html = '<div class="risk-section">';
+
+  // Fitness + Risk gauge
+  html += `<div class="risk-card">
+    <div class="risk-title">Fitness Score</div>
+    <div class="gauge-container">
+      <div class="gauge-ring">
+        <svg viewBox="0 0 80 80">
+          <circle class="bg" cx="40" cy="40" r="34"/>
+          <circle class="fg" cx="40" cy="40" r="34" stroke="var(--accent)"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${circumference * (1 - Math.min(r.fitness,100)/100)}"/>
+        </svg>
+        <div class="label" style="color:var(--accent2)">${r.fitness.toFixed(0)}</div>
+      </div>
+      <div class="gauge-details">
+        <div class="gauge-detail-row"><div class="gauge-dot" style="background:var(--accent)"></div>Composite fitness</div>
+        <div class="gauge-detail-row" style="color:var(--text3);font-size:10px">Higher is better. Penalized for safety violations.</div>
+      </div>
+    </div>
+  </div>`;
+
+  // Safety gauge
+  html += `<div class="risk-card">
+    <div class="risk-title">Risk Profile</div>
+    <div class="gauge-container">
+      <div class="gauge-ring">
+        <svg viewBox="0 0 80 80">
+          <circle class="bg" cx="40" cy="40" r="34"/>
+          <circle class="fg" cx="40" cy="40" r="34" stroke="${color}"
+            stroke-dasharray="${circumference}" stroke-dashoffset="${offset}"/>
+        </svg>
+        <div class="label" style="color:${color}">${score}</div>
+      </div>
+      <div class="gauge-details">
+        <div class="gauge-detail-row"><div class="gauge-dot" style="background:${color}"></div>${passed}/${totalConstraints} constraints pass</div>
+        ${score < 100 ? `<div class="gauge-detail-row" style="color:var(--amber);font-size:10px">Adjust parameters or use Optimize to improve</div>` : `<div class="gauge-detail-row" style="color:var(--green);font-size:10px">All constraints satisfied</div>`}
+      </div>
+    </div>
+  </div>`;
+
+  // Safety constraint details
+  if (totalConstraints > 0) {
+    html += '<div class="risk-card wide"><div class="risk-title">Safety Constraints</div>';
+    for (const c of allChance) {
+      const cls = c.passed ? 'pass' : 'fail';
+      const pct = (c.actual_prob * 100).toFixed(1);
+      const lim = (c.max_prob * 100).toFixed(0);
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>P(${c.metric.replace(/_/g,' ')} ${c.condition} ${fmtN(c.threshold)}) = <strong>${pct}%</strong> (limit ${lim}%)</span>
+      </div>`;
+    }
+    for (const c of allCvar) {
+      const cls = c.passed ? 'pass' : 'fail';
+      html += `<div class="safety-row">
+        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
+        <span>CVaR(${(c.alpha*100).toFixed(0)}%) ${c.metric.replace(/_/g,' ')} = <strong>${fmtDollar(c.actual_cvar)}</strong> (min ${fmtDollar(c.min_cvar)})</span>
+      </div>`;
+    }
+    html += '</div>';
   }
+
+  html += '</div>';
+  return html;
 }
 
-function switchChart(key) {
-  document.querySelectorAll('.chart-tab').forEach(t => t.classList.remove('active'));
-  event.target.classList.add('active');
-  drawTrajectory(key);
+// ═══════════════════════════════════════════
+// STAT CARDS
+// ═══════════════════════════════════════════
+function renderStatCard(name, s, r) {
+  const f = s.format || 'number';
+  const median = s.median;
+  const valStr = fmt(median, f);
+  const subStr = `mean ${fmt(s.mean, f)} &middot; std ${fmt(s.std, f)}`;
+  const rangeStr = `P10 ${fmt(s.p10, f)} &mdash; P90 ${fmt(s.p90, f)}`;
+
+  // Determine color
+  let valClass = 'neutral';
+  if (f === 'dollar' && median < 0) valClass = 'negative';
+  else if (f === 'dollar' && median > 0) valClass = 'positive';
+  else if (f === 'percent') {
+    if (name.includes('overrun') || name.includes('churn') || name.includes('drawdown')) {
+      valClass = median > 0.2 ? 'negative' : median > 0.1 ? 'neutral' : 'positive';
+    } else {
+      valClass = median >= 0.7 ? 'positive' : median >= 0.4 ? 'neutral' : 'negative';
+    }
+  }
+
+  // Delta from pinned
+  let deltaHtml = '';
+  if (pinnedResults && pinnedResults.stats[name]) {
+    const prev = pinnedResults.stats[name].median;
+    const diff = median - prev;
+    if (Math.abs(diff) > 0.01) {
+      const isUp = diff > 0;
+      const cls = isUp ? 'up' : 'down';
+      const arrow = isUp ? '+' : '';
+      deltaHtml = `<span class="stat-delta ${cls}">${arrow}${fmt(diff, f)}</span>`;
+    }
+  }
+
+  return `
+    <div class="stat-card" onclick="switchHistogram('${name}', null)">
+      ${deltaHtml}
+      <div class="stat-label">${name.replace(/_/g, ' ')}</div>
+      <div class="stat-value ${valClass}">${valStr}</div>
+      <div class="stat-sub">${rangeStr}</div>
+    </div>
+  `;
 }
 
-function drawTrajectory(key) {
-  const canvas = document.getElementById('trajectory-canvas');
-  if (!canvas || !currentResults) return;
+// ═══════════════════════════════════════════
+// HISTOGRAM
+// ═══════════════════════════════════════════
+function switchHistogram(key, tabEl) {
+  activeHistogram = key;
+  if (tabEl) {
+    document.querySelectorAll('#hist-tabs .chart-tab').forEach(t => t.classList.remove('active'));
+    tabEl.classList.add('active');
+  } else {
+    document.querySelectorAll('#hist-tabs .chart-tab').forEach(t => {
+      t.classList.toggle('active', t.textContent.trim() === key.replace(/_/g, ' '));
+    });
+  }
+  drawHistogram(key);
+}
+
+function drawHistogram(key) {
+  const canvas = document.getElementById('hist-canvas');
+  if (!canvas || !currentResults?.histograms?.[key]) return;
+
+  const h = currentResults.histograms[key];
+  const s = currentResults.stats[key];
+  const f = s?.format || 'number';
 
   const ctx = canvas.getContext('2d');
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.height = 220 * dpr;
+  canvas.style.height = '220px';
   ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
+  const W = rect.width, H = 220;
+
+  const pad = { top: 16, right: 20, bottom: 32, left: 65 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  ctx.fillStyle = '#0f1219';
+  ctx.fillRect(0, 0, W, H);
+
+  const bins = h.bins;
+  const counts = h.counts;
+  const maxCount = Math.max(...counts);
+  const n = bins.length;
+  const barW = cw / n;
+
+  // Bars
+  for (let i = 0; i < n; i++) {
+    const barH = (counts[i] / maxCount) * ch;
+    const x = pad.left + i * barW;
+    const y = pad.top + ch - barH;
+
+    // Color based on position relative to median
+    const binVal = bins[i] + (h.bin_width || 0) / 2;
+    let alpha = 0.7;
+    if (s && binVal < (s.p10 || 0)) alpha = 0.3;
+    else if (s && binVal > (s.p90 || 0)) alpha = 0.3;
+
+    ctx.fillStyle = `rgba(59, 130, 246, ${alpha})`;
+    ctx.fillRect(x + 0.5, y, Math.max(1, barW - 1), barH);
+  }
+
+  // Median line
+  if (s) {
+    const mx = pad.left + ((s.median - h.lo) / (h.hi - h.lo)) * cw;
+    ctx.strokeStyle = '#f59e0b';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(mx, pad.top);
+    ctx.lineTo(mx, pad.top + ch);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Label
+    ctx.fillStyle = '#f59e0b';
+    ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    ctx.textAlign = 'center';
+    ctx.fillText('median ' + fmt(s.median, f), mx, pad.top - 4);
+
+    // P10 / P90 labels
+    const p10x = pad.left + ((s.p10 - h.lo) / (h.hi - h.lo)) * cw;
+    const p90x = pad.left + ((s.p90 - h.lo) / (h.hi - h.lo)) * cw;
+    ctx.fillStyle = '#64748b';
+    ctx.font = '9px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+    if (p10x > pad.left + 30) {
+      ctx.textAlign = 'center';
+      ctx.fillText('P10', p10x, pad.top + ch + 22);
+    }
+    if (p90x < W - pad.right - 30) {
+      ctx.textAlign = 'center';
+      ctx.fillText('P90', p90x, pad.top + ch + 22);
+    }
+  }
+
+  // X axis
+  ctx.fillStyle = '#475569';
+  ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.textAlign = 'center';
+  const nLabels = 5;
+  for (let i = 0; i <= nLabels; i++) {
+    const v = h.lo + (h.hi - h.lo) * (i / nLabels);
+    const x = pad.left + (i / nLabels) * cw;
+    ctx.fillText(fmt(v, f), x, H - 6);
+  }
+
+  // Y axis
+  ctx.textAlign = 'right';
+  for (let i = 0; i <= 3; i++) {
+    const v = Math.round(maxCount * (1 - i / 3));
+    const y = pad.top + (ch / 3) * i;
+    ctx.fillText(v.toString(), pad.left - 8, y + 4);
+    ctx.strokeStyle = '#1e293b';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(pad.left, y);
+    ctx.lineTo(W - pad.right, y);
+    ctx.stroke();
+  }
+}
+
+// ═══════════════════════════════════════════
+// TRAJECTORY
+// ═══════════════════════════════════════════
+function switchTrajectory(key, tabEl) {
+  activeTrajectory = key;
+  if (tabEl) {
+    document.querySelectorAll('#traj-tabs .chart-tab').forEach(t => t.classList.remove('active'));
+    tabEl.classList.add('active');
+  }
+  drawTrajectory(key);
+}
+
+function drawTrajectory(key) {
+  const canvas = document.getElementById('traj-canvas');
+  if (!canvas || !currentResults?.trajectories?.[key]) return;
 
   const traj = currentResults.trajectories[key];
-  if (!traj) return;
-
+  const f = currentResults.stats[key]?.format || 'number';
   const { p10, p50, p90 } = traj;
   const n = p50.length;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 260 * dpr;
+  canvas.style.height = '260px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 260;
+
   const allVals = [...p10, ...p50, ...p90];
   const minV = Math.min(...allVals);
   const maxV = Math.max(...allVals);
@@ -769,128 +1362,132 @@ function drawTrajectory(key) {
   const ch = H - pad.top - pad.bottom;
   const rangeV = maxV - minV || 1;
 
-  function x(i) { return pad.left + (i / (n - 1)) * cw; }
+  function x(i) { return pad.left + (i / Math.max(1, n-1)) * cw; }
   function y(v) { return pad.top + ch - ((v - minV) / rangeV) * ch; }
 
-  // Clear
-  ctx.fillStyle = '#111827';
+  ctx.fillStyle = '#0f1219';
   ctx.fillRect(0, 0, W, H);
 
-  // Grid lines
-  ctx.strokeStyle = '#1e293b';
+  // Grid
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.font = '10px ' + mono;
+  ctx.strokeStyle = '#1a2236';
   ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
     const yy = pad.top + (ch / 4) * i;
     ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W - pad.right, yy); ctx.stroke();
     const val = maxV - (rangeV / 4) * i;
-    ctx.fillStyle = '#64748b';
-    ctx.font = '10px monospace';
+    ctx.fillStyle = '#475569';
     ctx.textAlign = 'right';
-    const format = currentResults.stats[key]?.format || 'number';
-    ctx.fillText(fmt(val, format), pad.left - 8, yy + 4);
+    ctx.fillText(fmt(val, f), pad.left - 8, yy + 4);
   }
 
-  // X axis labels
-  ctx.fillStyle = '#64748b';
+  // X axis
+  ctx.fillStyle = '#475569';
   ctx.textAlign = 'center';
   const stepLabel = currentConfig?.step_label || 'step';
-  for (let i = 0; i < n; i += Math.max(1, Math.floor(n / 6))) {
-    ctx.fillText(`${stepLabel} ${i + 1}`, x(i), H - 8);
+  const stride = Math.max(1, Math.floor(n / 6));
+  for (let i = 0; i < n; i += stride) {
+    ctx.fillText(`${i + 1}`, x(i), H - 8);
   }
 
-  // P10-P90 band
-  ctx.fillStyle = 'rgba(59, 130, 246, 0.1)';
+  // Band
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
   ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p90[i])); else ctx.lineTo(x(i), y(p90[i])); }
-  for (let i = n - 1; i >= 0; i--) ctx.lineTo(x(i), y(p10[i]));
+  for (let i = 0; i < n; i++) { i === 0 ? ctx.moveTo(x(i), y(p90[i])) : ctx.lineTo(x(i), y(p90[i])); }
+  for (let i = n-1; i >= 0; i--) ctx.lineTo(x(i), y(p10[i]));
   ctx.closePath(); ctx.fill();
 
-  // P10 line
-  ctx.strokeStyle = 'rgba(59, 130, 246, 0.3)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p10[i])); else ctx.lineTo(x(i), y(p10[i])); }
-  ctx.stroke();
+  // P10/P90 lines
+  ctx.strokeStyle = 'rgba(59,130,246,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(p10[i])):ctx.lineTo(x(i),y(p10[i]));} ctx.stroke();
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(p90[i])):ctx.lineTo(x(i),y(p90[i]));} ctx.stroke();
 
-  // P90 line
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p90[i])); else ctx.lineTo(x(i), y(p90[i])); }
-  ctx.stroke();
+  // Pinned comparison
+  if (pinnedResults?.trajectories?.[key]) {
+    const pt = pinnedResults.trajectories[key];
+    ctx.strokeStyle = 'rgba(245,158,11,0.4)'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+    ctx.beginPath();
+    for (let i=0;i<pt.p50.length;i++){i===0?ctx.moveTo(x(i),y(pt.p50[i])):ctx.lineTo(x(i),y(pt.p50[i]));}
+    ctx.stroke();
+  }
 
   // P50 line
   ctx.setLineDash([]);
-  ctx.strokeStyle = '#3b82f6';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2.5;
   ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(p50[i])); else ctx.lineTo(x(i), y(p50[i])); }
+  for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(p50[i])):ctx.lineTo(x(i),y(p50[i]));}
   ctx.stroke();
 
   // Legend
-  ctx.font = '10px monospace';
-  ctx.fillStyle = '#64748b';
-  const lx = W - pad.right - 120;
-  ctx.fillStyle = 'rgba(59, 130, 246, 0.3)'; ctx.fillText('--- P10 / P90', lx, pad.top + 12);
-  ctx.fillStyle = '#3b82f6'; ctx.fillText('--- P50 (median)', lx, pad.top + 24);
+  ctx.font = '10px ' + mono;
+  const lx = W - pad.right - 140;
+  ctx.fillStyle = 'rgba(59,130,246,0.4)'; ctx.fillText('P10 / P90 band', lx, pad.top + 14);
+  ctx.fillStyle = '#3b82f6'; ctx.fillText('P50 (median)', lx, pad.top + 28);
+  if (pinnedResults?.trajectories?.[key]) {
+    ctx.fillStyle = 'rgba(245,158,11,0.6)'; ctx.fillText('Pinned baseline', lx, pad.top + 42);
+  }
 }
 
+// ═══════════════════════════════════════════
+// EVOLUTION
+// ═══════════════════════════════════════════
 function renderEvolution(data) {
   let html = `
     <div class="results-header">
-      <h2>${data.domain} - Evolution</h2>
-      <div class="meta">${data.elapsed}s total</div>
-    </div>
-    <div class="fitness-panel">
-      <h3>Best Fitness</h3>
-      <div class="fitness-score">${data.best_fitness.toFixed(1)}</div>
+      <h2>${esc(data.domain)} &mdash; Optimization</h2>
+      <span class="results-meta">${data.elapsed}s</span>
     </div>
   `;
+
+  // Best fitness gauge
+  const circumference = 2 * Math.PI * 34;
+  html += `<div class="risk-section">
+    <div class="risk-card">
+      <div class="risk-title">Best Fitness Found</div>
+      <div class="gauge-container">
+        <div class="gauge-ring">
+          <svg viewBox="0 0 80 80">
+            <circle class="bg" cx="40" cy="40" r="34"/>
+            <circle class="fg" cx="40" cy="40" r="34" stroke="var(--green)"
+              stroke-dasharray="${circumference}" stroke-dashoffset="${circumference * (1 - Math.min(data.best_fitness,100)/100)}"/>
+          </svg>
+          <div class="label" style="color:var(--green)">${data.best_fitness.toFixed(0)}</div>
+        </div>
+      </div>
+    </div>
+    <div class="risk-card">
+      <div class="risk-title">Safety</div>
+      ${data.best_safety?.all_passed
+        ? '<div style="color:var(--green);font-size:14px;font-weight:600;margin-top:12px">All constraints satisfied</div>'
+        : '<div style="color:var(--red);font-size:14px;font-weight:600;margin-top:12px">Violations remain</div>'
+      }
+    </div>
+  </div>`;
 
   // Best stats
   html += '<div class="stats-grid">';
   for (const [name, s] of Object.entries(data.best_stats)) {
     const f = s.format || 'number';
-    html += `
-      <div class="stat-card">
-        <div class="label">${name.replace(/_/g, ' ')}</div>
-        <div class="value">${fmt(s.median, f)}</div>
-        <div class="sub">mean ${fmt(s.mean, f)}</div>
-      </div>
-    `;
+    const valClass = f === 'dollar' ? (s.median >= 0 ? 'positive' : 'negative') : 'neutral';
+    html += `<div class="stat-card">
+      <div class="stat-label">${name.replace(/_/g,' ')}</div>
+      <div class="stat-value ${valClass}">${fmt(s.median, f)}</div>
+      <div class="stat-sub">P10 ${fmt(s.p10,f)} &mdash; P90 ${fmt(s.p90,f)}</div>
+    </div>`;
   }
   html += '</div>';
 
-  // Safety
-  if (data.best_safety && (data.best_safety.chance?.length || data.best_safety.cvar?.length)) {
-    html += '<div class="safety-panel"><h3>Safety Constraints (Best)</h3>';
-    for (const c of (data.best_safety.chance || [])) {
-      const cls = c.passed ? 'pass' : 'fail';
-      html += `<div class="safety-row">
-        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
-        <span>P(${c.metric} ${c.condition} ${c.threshold.toLocaleString()}) = ${(c.actual_prob * 100).toFixed(1)}%</span>
-      </div>`;
-    }
-    for (const c of (data.best_safety.cvar || [])) {
-      const cls = c.passed ? 'pass' : 'fail';
-      html += `<div class="safety-row">
-        <span class="safety-badge ${cls}">${c.passed ? 'PASS' : 'FAIL'}</span>
-        <span>CVaR(${(c.alpha*100).toFixed(0)}%) ${c.metric} = $${Math.round(c.actual_cvar).toLocaleString()}</span>
-      </div>`;
-    }
-    html += '</div>';
-  }
-
-  // Evolution history chart
+  // Evolution chart
   if (data.history?.length) {
     html += `<div class="chart-section">
-      <h3>Fitness Over Generations</h3>
-      <canvas id="evo-canvas"></canvas>
+      <div class="chart-header"><span class="chart-title">Fitness Over Generations</span></div>
+      <canvas id="evo-canvas" height="240"></canvas>
     </div>`;
   }
 
   document.getElementById('main').innerHTML = html;
-
-  if (data.history?.length) drawEvoChart(data.history);
+  if (data.history?.length) requestAnimationFrame(() => drawEvoChart(data.history));
 }
 
 function drawEvoChart(history) {
@@ -901,67 +1498,99 @@ function drawEvoChart(history) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
   canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
+  canvas.height = 240 * dpr;
+  canvas.style.height = '240px';
   ctx.scale(dpr, dpr);
-  const W = rect.width, H = rect.height;
+  const W = rect.width, H = 240;
 
   const n = history.length;
-  const bestFits = history.map(h => h.best_fit);
-  const avgFits = history.map(h => h.avg_fit);
-  const allVals = [...bestFits, ...avgFits];
-  const minV = Math.min(...allVals) * 0.9;
-  const maxV = Math.max(...allVals) * 1.05;
-  const pad = { top: 20, right: 20, bottom: 30, left: 60 };
+  const best = history.map(h => h.best_fit);
+  const avg = history.map(h => h.avg_fit);
+  const all = [...best, ...avg];
+  const minV = Math.min(...all) * 0.9;
+  const maxV = Math.max(...all) * 1.05;
+  const pad = { top: 20, right: 20, bottom: 30, left: 55 };
   const cw = W - pad.left - pad.right;
   const ch = H - pad.top - pad.bottom;
   const rangeV = maxV - minV || 1;
 
-  function x(i) { return pad.left + (i / Math.max(1, n - 1)) * cw; }
+  function x(i) { return pad.left + (i / Math.max(1,n-1)) * cw; }
   function y(v) { return pad.top + ch - ((v - minV) / rangeV) * ch; }
 
-  ctx.fillStyle = '#111827';
+  ctx.fillStyle = '#0f1219';
   ctx.fillRect(0, 0, W, H);
 
-  // Grid
-  ctx.strokeStyle = '#1e293b'; ctx.lineWidth = 1;
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.font = '10px ' + mono;
+  ctx.strokeStyle = '#1a2236'; ctx.lineWidth = 1;
   for (let i = 0; i <= 4; i++) {
-    const yy = pad.top + (ch / 4) * i;
-    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W - pad.right, yy); ctx.stroke();
-    const val = maxV - (rangeV / 4) * i;
-    ctx.fillStyle = '#64748b'; ctx.font = '10px monospace'; ctx.textAlign = 'right';
-    ctx.fillText(val.toFixed(1), pad.left - 8, yy + 4);
+    const yy = pad.top + (ch/4)*i;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W-pad.right, yy); ctx.stroke();
+    ctx.fillStyle = '#475569'; ctx.textAlign = 'right';
+    ctx.fillText((maxV - rangeV/4*i).toFixed(1), pad.left-8, yy+4);
   }
+  ctx.fillStyle = '#475569'; ctx.textAlign = 'center';
+  for (let i = 0; i < n; i += Math.max(1,Math.floor(n/8))) ctx.fillText(`Gen ${i}`, x(i), H-8);
 
-  // X labels
-  ctx.fillStyle = '#64748b'; ctx.textAlign = 'center';
-  for (let i = 0; i < n; i += Math.max(1, Math.floor(n / 8))) {
-    ctx.fillText(`Gen ${i}`, x(i), H - 8);
-  }
+  ctx.strokeStyle = 'rgba(245,158,11,0.5)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(avg[i])):ctx.lineTo(x(i),y(avg[i]));} ctx.stroke();
 
-  // Average fitness
-  ctx.strokeStyle = 'rgba(245, 158, 11, 0.6)'; ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(avgFits[i])); else ctx.lineTo(x(i), y(avgFits[i])); }
-  ctx.stroke();
+  ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(best[i])):ctx.lineTo(x(i),y(best[i]));} ctx.stroke();
 
-  // Best fitness
-  ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 2;
-  ctx.beginPath();
-  for (let i = 0; i < n; i++) { if (i === 0) ctx.moveTo(x(i), y(bestFits[i])); else ctx.lineTo(x(i), y(bestFits[i])); }
-  ctx.stroke();
-
-  // Legend
-  ctx.font = '10px monospace';
-  ctx.fillStyle = '#22c55e'; ctx.fillText('Best', W - pad.right - 80, pad.top + 12);
-  ctx.fillStyle = 'rgba(245, 158, 11, 0.8)'; ctx.fillText('Average', W - pad.right - 80, pad.top + 24);
+  ctx.font = '10px ' + mono;
+  const lx = W - pad.right - 90;
+  ctx.fillStyle = '#22c55e'; ctx.fillText('Best', lx, pad.top+14);
+  ctx.fillStyle = 'rgba(245,158,11,0.7)'; ctx.fillText('Average', lx, pad.top+28);
 }
 
-// --- Init ---
-window.addEventListener('resize', () => {
-  if (currentResults && document.getElementById('trajectory-canvas')) {
-    const active = document.querySelector('.chart-tab.active');
-    if (active) drawTrajectory(active.textContent.trim().replace(/ /g, '_'));
+// ═══════════════════════════════════════════
+// UTILITIES
+// ═══════════════════════════════════════════
+function fmt(val, format) {
+  if (typeof val !== 'number' || isNaN(val)) return '—';
+  if (format === 'dollar') {
+    const neg = val < 0;
+    const abs = Math.abs(val);
+    const str = abs >= 1000000 ? (abs/1000000).toFixed(1)+'M' : abs >= 1000 ? Math.round(abs).toLocaleString() : abs.toFixed(0);
+    return (neg ? '-$' : '$') + str;
   }
+  if (format === 'percent') return (val * 100).toFixed(1) + '%';
+  if (Math.abs(val) >= 1000) return Math.round(val).toLocaleString();
+  if (Math.abs(val) >= 1) return val.toFixed(1);
+  return val.toFixed(3);
+}
+
+function fmtN(v) {
+  if (typeof v !== 'number') return v;
+  if (Math.abs(v) >= 1000) return v.toLocaleString();
+  if (v === Math.floor(v)) return v.toString();
+  return v.toFixed(2);
+}
+
+function fmtDollar(v) {
+  const neg = v < 0;
+  return (neg ? '-$' : '$') + Math.abs(Math.round(v)).toLocaleString();
+}
+
+function round4(v) { return Math.round(v * 10000) / 10000; }
+
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+function setStatus(s) {
+  document.getElementById('header-status').textContent = s;
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+window.addEventListener('resize', () => {
+  if (activeHistogram) drawHistogram(activeHistogram);
+  if (activeTrajectory) drawTrajectory(activeTrajectory);
 });
 
 loadDomains();

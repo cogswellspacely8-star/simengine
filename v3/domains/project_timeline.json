@@ -1,0 +1,173 @@
+{
+  "name": "Software Project Delivery (26 Sprints)",
+  "description": "Models a 26-sprint (1 year) software project: feature velocity, scope creep, bug discovery, team velocity variance, and deadline risk. Answers: Will we ship on time, and how much buffer do we actually need?",
+  "n_simulations": 5000,
+  "n_steps": 26,
+  "step_label": "sprint",
+  "seed": 42,
+
+  "context": {
+    "decision": "Can we commit to this delivery date, and how much contingency should we quote the client?",
+    "key_levers": "Team size, sprint length, and scope management discipline are what you control. Bug rates and scope creep are the risks.",
+    "what_good_looks_like": "90% of scope delivered by sprint 26, budget overrun under 20%, and team utilization between 70-85% (not burning out)."
+  },
+
+  "parameters": {
+    "velocity_per_dev": {
+      "distribution": "triangular",
+      "params": {"low": 4, "mode": 8, "high": 14},
+      "calibration": {
+        "source": "Story points per developer per sprint; wide range reflects learning curve, interrupts, and complexity variance",
+        "updatable": true,
+        "update_method": "Normal conjugate after observing actual sprint velocities"
+      }
+    },
+    "scope_creep_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.00, "mode": 0.03, "high": 0.10},
+      "calibration": {
+        "source": "PMI PMBOK: 3-8% scope growth per period is typical for software; >10% indicates poor requirements"
+      }
+    },
+    "bug_discovery_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.05, "mode": 0.12, "high": 0.25},
+      "calibration": {
+        "source": "Ratio of bug-fix work to feature work per sprint; Capers Jones data suggests 15-30% of effort goes to defects"
+      }
+    },
+    "velocity_variance": {
+      "distribution": "uniform",
+      "params": {"low": 0.7, "high": 1.3},
+      "calibration": {
+        "source": "Sprint-to-sprint velocity multiplier; captures sick days, context switching, holidays"
+      }
+    }
+  },
+
+  "controls": {
+    "team_size": {
+      "distribution": "fixed",
+      "params": {"value": 4},
+      "calibration": {"source": "Number of developers on the project"}
+    },
+    "initial_scope": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Total story points estimated at project start"}
+    },
+    "cost_per_dev_sprint": {
+      "distribution": "fixed",
+      "params": {"value": 5000},
+      "calibration": {"source": "Fully loaded developer cost per 2-week sprint (~$130k/yr)"}
+    },
+    "project_budget": {
+      "distribution": "fixed",
+      "params": {"value": 600000},
+      "calibration": {"source": "Total budget quoted to client"}
+    }
+  },
+
+  "exogenous": {
+    "external_blocker_prob": {
+      "distribution": "fixed",
+      "params": {"value": 0.08},
+      "calibration": {
+        "source": "Probability of an external dependency blocking the sprint (API partner, legal review, etc.)"
+      }
+    },
+    "blocker_velocity_hit": {
+      "distribution": "fixed",
+      "params": {"value": 0.5},
+      "calibration": {
+        "source": "Velocity multiplier when blocked; team can do other work but at reduced throughput"
+      }
+    }
+  },
+
+  "initial_state": {
+    "total_scope": 500,
+    "completed_points": 0,
+    "cumulative_cost": 0,
+    "bugs_found": 0,
+    "bugs_fixed": 0,
+    "sprints_blocked": 0,
+    "scope_added": 0
+  },
+
+  "step_logic": [
+    {"target": "is_blocked",          "expr": "1 if random() < external_blocker_prob else 0"},
+    {"target": "block_mult",          "expr": "blocker_velocity_hit if is_blocked > 0 else 1.0"},
+    {"target": "raw_velocity",        "expr": "velocity_per_dev * team_size * velocity_variance * block_mult"},
+    {"target": "new_bugs",            "expr": "round(raw_velocity * bug_discovery_rate)"},
+    {"target": "bug_fix_effort",      "expr": "min(new_bugs + (bugs_found - bugs_fixed), raw_velocity * 0.3)"},
+    {"target": "feature_velocity",    "expr": "max(0, raw_velocity - bug_fix_effort)"},
+    {"target": "new_scope",           "expr": "round(total_scope * scope_creep_rate)"},
+    {"target": "sprint_cost",         "expr": "team_size * cost_per_dev_sprint"},
+    {"target": "pct_complete",        "expr": "(completed_points + feature_velocity) / max(1, total_scope + new_scope)"}
+  ],
+
+  "accumulators": {
+    "completed_points": "min(total_scope, completed_points + feature_velocity)",
+    "total_scope":      "total_scope + new_scope",
+    "cumulative_cost":  "cumulative_cost + sprint_cost",
+    "bugs_found":       "bugs_found + new_bugs",
+    "bugs_fixed":       "bugs_fixed + bug_fix_effort",
+    "sprints_blocked":  "sprints_blocked + is_blocked",
+    "scope_added":      "scope_added + new_scope"
+  },
+
+  "metrics": {
+    "pct_scope_delivered":  {"expr": "completed_points / total_scope if total_scope > 0 else 0", "format": "percent"},
+    "total_cost":           {"expr": "cumulative_cost",           "format": "dollar"},
+    "budget_overrun":       {"expr": "(cumulative_cost - project_budget) / project_budget if project_budget > 0 else 0", "format": "percent"},
+    "final_scope":          {"expr": "total_scope",               "format": "number"},
+    "scope_growth":         {"expr": "scope_added / initial_scope if initial_scope > 0 else 0", "format": "percent"},
+    "points_completed":     {"expr": "completed_points",          "format": "number"},
+    "open_bugs":            {"expr": "bugs_found - bugs_fixed",   "format": "number"},
+    "sprints_blocked":      {"expr": "sprints_blocked",           "format": "number"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "pct_scope_delivered",
+        "condition": "below",
+        "threshold": 0.85,
+        "max_prob": 0.20,
+        "rationale": "At least 80% chance of delivering 85%+ of scope — below this, the client won't accept delivery"
+      },
+      {
+        "metric": "budget_overrun",
+        "condition": "above",
+        "threshold": 0.20,
+        "max_prob": 0.15,
+        "rationale": "No more than 15% chance of exceeding budget by 20%+ — that's the contingency buffer"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "budget_overrun",
+        "alpha": 0.10,
+        "min_cvar": -0.50,
+        "rationale": "In the worst 10% of scenarios, budget overrun must not exceed 50%"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, pct_scope_delivered_median * 100)",          "weight": 0.35, "name": "delivery"},
+      {"expr": "max(0, 100 - budget_overrun_median * 200)",           "weight": 0.25, "name": "budget"},
+      {"expr": "max(0, 100 - open_bugs_median * 2)",                  "weight": 0.20, "name": "quality"},
+      {"expr": "max(0, 100 - sprints_blocked_median * 10)",           "weight": 0.20, "name": "flow"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.team_size.params.value",                "range": [2, 8]},
+    {"path": "parameters.velocity_per_dev.params.mode",        "range": [4, 14]},
+    {"path": "parameters.scope_creep_rate.params.mode",        "range": [0.01, 0.08]},
+    {"path": "controls.initial_scope.params.value",            "range": [300, 800]}
+  ]
+}

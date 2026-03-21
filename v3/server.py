@@ -5,18 +5,19 @@ Run: python server.py
 Open: http://localhost:8420
 """
 
-import json, os, sys, time, copy, glob
+import json, os, sys, time, copy, glob, math, statistics
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kernel import (
     DomainConfig, run_monte_carlo, evaluate_safety,
-    compute_fitness, evolve
+    compute_fitness, evolve, percentile
 )
 
 DOMAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "domains")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
 
 def list_domains():
     results = []
@@ -31,6 +32,7 @@ def list_domains():
                 "file": name,
                 "name": data.get("name", name),
                 "description": data.get("description", ""),
+                "context": data.get("context", {}),
                 "n_simulations": data.get("n_simulations", 5000),
                 "n_steps": data.get("n_steps", 12),
                 "step_label": data.get("step_label", "step"),
@@ -46,9 +48,101 @@ def load_domain(filename):
         return json.load(f)
 
 
+def build_histograms(raw_metrics, stats, n_bins=40):
+    """Build histogram data for each metric."""
+    histograms = {}
+    for metric, values in raw_metrics.items():
+        if not values:
+            continue
+        sv = sorted(values)
+        lo, hi = sv[0], sv[-1]
+        if lo == hi:
+            histograms[metric] = {"bins": [lo], "counts": [len(sv)], "lo": lo, "hi": hi}
+            continue
+        bin_width = (hi - lo) / n_bins
+        bins = [lo + i * bin_width for i in range(n_bins)]
+        counts = [0] * n_bins
+        for v in sv:
+            idx = min(int((v - lo) / bin_width), n_bins - 1)
+            counts[idx] += 1
+        histograms[metric] = {
+            "bins": [round(b, 4) for b in bins],
+            "counts": counts,
+            "bin_width": round(bin_width, 4),
+            "lo": round(lo, 2),
+            "hi": round(hi, 2),
+        }
+    return histograms
+
+
+def generate_narrative(stats, safety, config_data):
+    """Generate plain-English narrative from simulation results."""
+    lines = []
+    context = config_data.get("context", {})
+
+    if context.get("decision"):
+        lines.append(f"**The question:** {context['decision']}")
+        lines.append("")
+
+    metrics = config_data.get("metrics", {})
+    for mname, s in stats.items():
+        fmt = s.get("format", "number")
+        mdef = metrics.get(mname, {})
+
+        if fmt == "dollar":
+            median_str = f"${s['median']:,.0f}"
+            p10_str = f"${s['p10']:,.0f}"
+            p90_str = f"${s['p90']:,.0f}"
+        elif fmt == "percent":
+            median_str = f"{s['median']*100:.1f}%"
+            p10_str = f"{s['p10']*100:.1f}%"
+            p90_str = f"{s['p90']*100:.1f}%"
+        else:
+            median_str = f"{s['median']:,.1f}"
+            p10_str = f"{s['p10']:,.1f}"
+            p90_str = f"{s['p90']:,.1f}"
+
+        label = mname.replace("_", " ").title()
+        lines.append(
+            f"**{label}** is most likely {median_str} "
+            f"(range: {p10_str} to {p90_str} in 80% of scenarios)."
+        )
+
+    if safety:
+        lines.append("")
+        all_pass = safety.get("all_passed", True)
+        if all_pass:
+            lines.append("All safety constraints pass. The current configuration is within acceptable risk bounds.")
+        else:
+            violations = []
+            for c in safety.get("chance", []):
+                if not c["passed"]:
+                    violations.append(
+                        f"There is a {c['actual_prob']*100:.0f}% chance of "
+                        f"{c['metric'].replace('_',' ')} falling {c['condition']} "
+                        f"{c['threshold']:,.0f} (limit: {c['max_prob']*100:.0f}%)"
+                    )
+            for c in safety.get("cvar", []):
+                if not c["passed"]:
+                    violations.append(
+                        f"In the worst {c['alpha']*100:.0f}% of scenarios, "
+                        f"{c['metric'].replace('_',' ')} averages "
+                        f"${c['actual_cvar']:,.0f} (limit: ${c['min_cvar']:,.0f})"
+                    )
+            lines.append("**Risk warnings:**")
+            for v in violations:
+                lines.append(f"- {v}")
+
+    if context.get("what_good_looks_like"):
+        lines.append("")
+        lines.append(f"**What good looks like:** {context['what_good_looks_like']}")
+
+    return "\n".join(lines)
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        pass  # quiet logs
+        pass
 
     def _cors(self):
         self.send_header("Access-Control-Allow-Origin", "*")
@@ -116,7 +210,6 @@ class Handler(BaseHTTPRequestHandler):
 
                 data = load_domain(filename)
 
-                # Apply parameter overrides
                 for key, value in overrides.items():
                     parts = key.split(".")
                     obj = data
@@ -137,17 +230,25 @@ class Handler(BaseHTTPRequestHandler):
                 if cfg.fitness:
                     fitness = compute_fitness(mc, cfg.fitness, cfg.safety)
 
+                histograms = build_histograms(mc["raw_metrics"], mc["stats"])
+                narrative = generate_narrative(mc["stats"], safety, data)
+
                 result = {
                     "domain": mc["domain"],
                     "n_simulations": mc["n_simulations"],
                     "elapsed": round(elapsed, 2),
                     "stats": mc["stats"],
                     "trajectories": mc["trajectories"],
+                    "histograms": histograms,
                     "safety": safety,
                     "fitness": fitness,
+                    "narrative": narrative,
+                    "context": data.get("context", {}),
                 }
                 self._json_response(result)
             except Exception as e:
+                import traceback
+                traceback.print_exc()
                 self._json_response({"error": str(e)}, 500)
             return
 
