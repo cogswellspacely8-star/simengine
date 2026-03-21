@@ -680,6 +680,106 @@ canvas { width: 100%; display: block; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
 
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200;
+  display: flex; align-items: center; justify-content: center;
+  backdrop-filter: blur(4px);
+}
+
+.modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  width: 90vw; max-width: 720px; max-height: 85vh; overflow-y: auto;
+  padding: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+
+.modal h2 { font-size: 16px; margin-bottom: 4px; }
+.modal .modal-sub { font-size: 12px; color: var(--text3); margin-bottom: 20px; }
+
+.modal-tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+.modal-tab {
+  padding: 6px 14px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  color: var(--text3); background: var(--surface2); border: 1px solid var(--border); transition: all 0.15s;
+}
+.modal-tab:hover { color: var(--text2); }
+.modal-tab.active { color: var(--accent2); border-color: var(--accent); background: rgba(59,130,246,0.08); }
+
+.wizard-step { display: none; }
+.wizard-step.active { display: block; }
+
+.form-group { margin-bottom: 14px; }
+.form-label { display: block; font-size: 11px; color: var(--text2); margin-bottom: 4px; font-weight: 600; }
+.form-input, .form-select, .form-textarea {
+  width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 8px 10px; border-radius: 6px; font-family: var(--font); font-size: 12px;
+}
+.form-textarea { font-family: var(--mono); font-size: 11px; min-height: 200px; resize: vertical; }
+.form-input:focus, .form-textarea:focus { outline: none; border-color: var(--accent); }
+.form-hint { font-size: 10px; color: var(--text3); margin-top: 3px; }
+
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+
+.var-card {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+  padding: 12px; margin-bottom: 8px;
+}
+.var-card .var-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.var-card .var-name { font-weight: 600; font-size: 12px; }
+.var-remove { cursor: pointer; color: var(--text3); font-size: 18px; line-height: 1; }
+.var-remove:hover { color: var(--red); }
+
+.btn-add-var {
+  display: inline-block; padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  color: var(--accent2); background: rgba(59,130,246,0.08); border: 1px dashed rgba(59,130,246,0.3);
+  transition: all 0.15s;
+}
+.btn-add-var:hover { background: rgba(59,130,246,0.15); border-color: var(--accent); }
+
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.modal-actions .btn { width: auto; padding: 8px 20px; }
+
+.validation-errors {
+  background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2); border-radius: 8px;
+  padding: 12px; margin-bottom: 16px; font-size: 12px; color: var(--red);
+}
+.validation-errors li { margin-left: 16px; margin-bottom: 2px; }
+
+.validation-ok {
+  background: rgba(34,197,94,0.08); border: 1px solid rgba(34,197,94,0.2); border-radius: 8px;
+  padding: 12px; margin-bottom: 16px; font-size: 12px; color: var(--green);
+}
+
+/* ── Scenario bar ── */
+.scenario-bar {
+  display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px;
+}
+
+.scenario-chip {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text2);
+  transition: all 0.15s;
+}
+.scenario-chip:hover { border-color: var(--border2); }
+.scenario-chip.active { border-color: var(--accent); color: var(--accent2); }
+.scenario-chip .chip-close {
+  font-size: 14px; color: var(--text3); cursor: pointer; line-height: 1;
+}
+.scenario-chip .chip-close:hover { color: var(--red); }
+.scenario-chip .chip-dot { width: 6px; height: 6px; border-radius: 50%; }
+
+/* ── Action bar ── */
+.action-bar {
+  display: flex; gap: 8px; align-items: center; margin-bottom: 16px;
+}
+.action-btn {
+  padding: 6px 14px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  background: var(--surface); border: 1px solid var(--border); color: var(--text2);
+  font-family: var(--font); transition: all 0.15s;
+}
+.action-btn:hover { border-color: var(--border2); color: var(--text); }
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
@@ -704,7 +804,10 @@ canvas { width: 100%; display: block; }
 <div class="app">
   <aside class="sidebar">
     <div class="sidebar-section" id="domain-section">
-      <div class="section-title">Domains</div>
+      <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+        Domains
+        <span class="btn-add-var" onclick="openWizard()" style="font-size:10px;padding:3px 8px">+ New</span>
+      </div>
       <div id="domain-list"></div>
     </div>
 
@@ -725,7 +828,9 @@ canvas { width: 100%; display: block; }
       </div>
       <button class="btn btn-run" id="btn-run" onclick="runSimulation()">Run Simulation</button>
       <button class="btn btn-evolve" id="btn-evolve" onclick="runEvolution()">Optimize (Evolutionary)</button>
-      <button class="btn btn-compare" id="btn-compare" onclick="togglePin()">Pin for comparison</button>
+      <button class="btn btn-compare" id="btn-compare" onclick="saveScenario()">Save Scenario</button>
+      <button class="btn btn-compare" id="btn-export" onclick="exportReport()" style="display:none">Export Report</button>
+      <button class="btn btn-compare" id="btn-update" onclick="openBayesianUpdate()" style="display:none">Update from Data</button>
     </div>
   </aside>
 
@@ -750,6 +855,9 @@ let currentResults = null;
 let pinnedResults = null;
 let activeHistogram = null;
 let activeTrajectory = null;
+const SCENARIO_COLORS = ['#3b82f6','#f59e0b','#22c55e','#a78bfa','#ef4444','#22d3ee'];
+let scenarios = []; // [{name, results, color}]
+let activeScenarioIdx = -1; // -1 means current run
 
 // ═══════════════════════════════════════════
 // DOMAIN LIST
@@ -786,8 +894,10 @@ async function selectDomain(file) {
   buildParamEditor();
   document.getElementById('params-section').style.display = '';
   document.getElementById('run-section').style.display = '';
-  document.getElementById('btn-compare').classList.remove('pinned');
-  document.getElementById('btn-compare').textContent = 'Pin for comparison';
+
+  // Show update button if domain has updatable params
+  const hasUpdatable = Object.values(currentConfig.parameters || {}).some(v => v.calibration?.updatable);
+  document.getElementById('btn-update').style.display = hasUpdatable ? '' : 'none';
 
   // Show context if available
   const ctx = currentConfig.context;
@@ -937,7 +1047,9 @@ async function runSimulation() {
     const data = await res.json();
     if (data.error) throw new Error(data.error);
     currentResults = data;
+    activeScenarioIdx = -1;
     renderResults(data);
+    document.getElementById('btn-export').style.display = '';
     setStatus(`${data.n_simulations.toLocaleString()} sims in ${data.elapsed}s`);
   } catch(e) {
     document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-title" style="color:var(--red)">Error</div><div class="empty-sub">${esc(e.message)}</div></div>`;
@@ -1001,6 +1113,16 @@ function togglePin() {
 // ═══════════════════════════════════════════
 function renderResults(r) {
   let html = '';
+
+  // Scenario bar
+  if (scenarios.length > 0 || currentResults) {
+    html += renderScenarioBar();
+  }
+
+  // Action bar
+  html += `<div class="action-bar">
+    <button class="action-btn" onclick="exportReport()">Export Report</button>
+  </div>`;
 
   // Context banner
   if (r.context?.decision) {
@@ -1583,6 +1705,627 @@ function esc(s) {
 
 function setStatus(s) {
   document.getElementById('header-status').textContent = s;
+}
+
+// ═══════════════════════════════════════════
+// SCENARIOS
+// ═══════════════════════════════════════════
+function saveScenario() {
+  if (!currentResults) return;
+  const name = prompt('Scenario name:', `Scenario ${scenarios.length + 1}`);
+  if (!name) return;
+  scenarios.push({
+    name,
+    results: JSON.parse(JSON.stringify(currentResults)),
+    color: SCENARIO_COLORS[scenarios.length % SCENARIO_COLORS.length],
+  });
+  // Also set as pinned for delta comparison
+  pinnedResults = scenarios[scenarios.length - 1].results;
+  if (currentResults) renderResults(currentResults);
+}
+
+function removeScenario(idx) {
+  scenarios.splice(idx, 1);
+  if (scenarios.length > 0) {
+    pinnedResults = scenarios[scenarios.length - 1].results;
+  } else {
+    pinnedResults = null;
+  }
+  if (currentResults) renderResults(currentResults);
+}
+
+function viewScenario(idx) {
+  if (idx < 0) {
+    activeScenarioIdx = -1;
+    if (currentResults) renderResults(currentResults);
+  } else if (scenarios[idx]) {
+    activeScenarioIdx = idx;
+    renderResults(scenarios[idx].results);
+  }
+}
+
+function renderScenarioBar() {
+  if (scenarios.length === 0 && !currentResults) return '';
+  let html = '<div class="scenario-bar">';
+  if (currentResults) {
+    html += `<div class="scenario-chip ${activeScenarioIdx===-1?'active':''}" onclick="viewScenario(-1)">
+      <span class="chip-dot" style="background:var(--accent)"></span>Current Run
+    </div>`;
+  }
+  scenarios.forEach((s, i) => {
+    html += `<div class="scenario-chip ${activeScenarioIdx===i?'active':''}" onclick="viewScenario(${i})">
+      <span class="chip-dot" style="background:${s.color}"></span>${esc(s.name)}
+      <span class="chip-close" onclick="event.stopPropagation();removeScenario(${i})">x</span>
+    </div>`;
+  });
+  html += '</div>';
+  return html;
+}
+
+// ═══════════════════════════════════════════
+// EXPORT
+// ═══════════════════════════════════════════
+function exportReport() {
+  if (!currentResults) return;
+  const w = window.open('', '_blank');
+  w.document.write('<html><body style="background:#0a0e17;color:white;font-family:sans-serif;padding:40px"><p>Generating report...</p></body></html>');
+
+  fetch('/api/report', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ results: currentResults, config: currentConfig || {} })
+  })
+  .then(r => r.text())
+  .then(html => { w.document.open(); w.document.write(html); w.document.close(); })
+  .catch(e => { w.document.body.innerHTML = '<p style="color:red">Error: ' + e.message + '</p>'; });
+}
+
+// ═══════════════════════════════════════════
+// DOMAIN WIZARD
+// ═══════════════════════════════════════════
+let wizardVars = [];
+let wizardSteps = [];
+let wizardMetrics = [];
+
+function openWizard() {
+  wizardVars = []; wizardSteps = []; wizardMetrics = [];
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'wizard-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeWizard(); };
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Create New Domain</h2>
+      <div class="modal-sub">Build a simulation model from scratch, or paste a JSON config from an AI assistant.</div>
+
+      <div class="modal-tabs">
+        <div class="modal-tab active" onclick="switchWizardMode('guided',this)">Guided</div>
+        <div class="modal-tab" onclick="switchWizardMode('json',this)">Paste JSON</div>
+      </div>
+
+      <div id="wizard-guided">
+        <div class="form-group">
+          <label class="form-label">What are you modeling?</label>
+          <input class="form-input" id="wiz-name" placeholder="e.g., Food Truck Weekend Revenue">
+        </div>
+        <div class="form-group">
+          <label class="form-label">What decision does this help you make?</label>
+          <input class="form-input" id="wiz-decision" placeholder="e.g., Should I invest in a second food truck?">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Number of time steps</label>
+            <input class="form-input" id="wiz-steps" type="number" value="12" min="1">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Step label</label>
+            <input class="form-input" id="wiz-step-label" value="month" placeholder="month, week, sprint...">
+          </div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+            Variables
+            <span class="btn-add-var" onclick="addWizardVar()">+ Add Variable</span>
+          </div>
+          <div id="wiz-vars"></div>
+          <div class="form-hint">Variables are the uncertain inputs (rates, prices, counts). Each one gets a probability distribution.</div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+            Step Logic
+            <span class="btn-add-var" onclick="addWizardStep()">+ Add Step</span>
+          </div>
+          <div id="wiz-steps-list"></div>
+          <div class="form-hint">What happens each time step? Each step computes a target from an expression. Use variable names and math.</div>
+        </div>
+
+        <div style="margin-top:16px">
+          <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
+            Metrics (outputs)
+            <span class="btn-add-var" onclick="addWizardMetric()">+ Add Metric</span>
+          </div>
+          <div id="wiz-metrics-list"></div>
+          <div class="form-hint">What do you want to measure at the end? Reference accumulated values.</div>
+        </div>
+
+        <div id="wiz-validation"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-compare" onclick="closeWizard()">Cancel</button>
+          <button class="btn btn-evolve" onclick="validateWizard()">Validate</button>
+          <button class="btn btn-run" onclick="saveWizard()">Save &amp; Load</button>
+        </div>
+      </div>
+
+      <div id="wizard-json" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Paste domain config JSON</label>
+          <textarea class="form-textarea" id="wiz-json" placeholder='{"name": "My Simulation", "n_steps": 12, ...}'></textarea>
+          <div class="form-hint">Paste a complete SimEngine domain config. AI assistants can generate this from a natural language description of your decision.</div>
+        </div>
+
+        <div id="wiz-json-validation"></div>
+
+        <div class="modal-actions">
+          <button class="btn btn-compare" onclick="closeWizard()">Cancel</button>
+          <button class="btn btn-evolve" onclick="validateJsonWizard()">Validate</button>
+          <button class="btn btn-run" onclick="saveJsonWizard()">Save &amp; Load</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function closeWizard() {
+  const el = document.getElementById('wizard-overlay');
+  if (el) el.remove();
+}
+
+function switchWizardMode(mode, tab) {
+  document.querySelectorAll('.modal-tabs .modal-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('wizard-guided').style.display = mode === 'guided' ? '' : 'none';
+  document.getElementById('wizard-json').style.display = mode === 'json' ? '' : 'none';
+}
+
+function addWizardVar() {
+  const id = wizardVars.length;
+  wizardVars.push({name:'', dist:'triangular'});
+  const el = document.getElementById('wiz-vars');
+  const card = document.createElement('div');
+  card.className = 'var-card';
+  card.id = 'wv-' + id;
+  card.innerHTML = `
+    <div class="var-header">
+      <input class="form-input" placeholder="variable name" style="width:50%;font-weight:600" data-wv="${id}" data-field="name">
+      <span class="var-remove" onclick="removeWizardVar(${id})">x</span>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Distribution</label>
+        <select class="form-input" data-wv="${id}" data-field="dist" onchange="updateVarParams(${id})">
+          <option value="fixed">fixed</option>
+          <option value="triangular" selected>triangular</option>
+          <option value="uniform">uniform</option>
+          <option value="normal">normal</option>
+          <option value="lognormal">lognormal</option>
+          <option value="bernoulli">bernoulli</option>
+          <option value="poisson">poisson</option>
+        </select>
+      </div>
+      <div class="form-group" id="wvp-${id}-1">
+        <label class="form-label">low</label>
+        <input class="form-input" type="number" step="any" data-wv="${id}" data-field="p1" value="0">
+      </div>
+      <div class="form-group" id="wvp-${id}-2">
+        <label class="form-label">mode</label>
+        <input class="form-input" type="number" step="any" data-wv="${id}" data-field="p2" value="10">
+      </div>
+    </div>
+    <div class="form-row-3" id="wvp-${id}-extra">
+      <div class="form-group">
+        <label class="form-label">high</label>
+        <input class="form-input" type="number" step="any" data-wv="${id}" data-field="p3" value="20">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category</label>
+      <select class="form-input" data-wv="${id}" data-field="cat" style="width:50%">
+        <option value="parameters">Parameter (uncertain)</option>
+        <option value="controls">Control (your decision)</option>
+        <option value="exogenous">Exogenous (external)</option>
+      </select>
+    </div>
+  `;
+  el.appendChild(card);
+}
+
+function removeWizardVar(id) {
+  const el = document.getElementById('wv-' + id);
+  if (el) el.remove();
+  wizardVars[id] = null;
+}
+
+function updateVarParams(id) {
+  // Simplified — users can set params via the fields
+}
+
+function addWizardStep() {
+  const id = wizardSteps.length;
+  wizardSteps.push({});
+  const el = document.getElementById('wiz-steps-list');
+  const card = document.createElement('div');
+  card.className = 'var-card';
+  card.id = 'ws-' + id;
+  card.innerHTML = `
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Target</label>
+        <input class="form-input" placeholder="revenue" data-ws="${id}" data-field="target">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expression</label>
+        <input class="form-input" placeholder="price * quantity" data-ws="${id}" data-field="expr">
+      </div>
+    </div>
+    <span class="var-remove" onclick="document.getElementById('ws-${id}').remove()" style="position:absolute;right:12px;top:10px">x</span>
+  `;
+  card.style.position = 'relative';
+  el.appendChild(card);
+}
+
+function addWizardMetric() {
+  const id = wizardMetrics.length;
+  wizardMetrics.push({});
+  const el = document.getElementById('wiz-metrics-list');
+  const card = document.createElement('div');
+  card.className = 'var-card';
+  card.id = 'wm-' + id;
+  card.innerHTML = `
+    <div class="form-row-3">
+      <div class="form-group">
+        <label class="form-label">Name</label>
+        <input class="form-input" placeholder="total_revenue" data-wm="${id}" data-field="name">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Expression</label>
+        <input class="form-input" placeholder="cumulative_revenue" data-wm="${id}" data-field="expr">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Format</label>
+        <select class="form-input" data-wm="${id}" data-field="format">
+          <option value="dollar">Dollar</option>
+          <option value="number">Number</option>
+          <option value="percent">Percent</option>
+        </select>
+      </div>
+    </div>
+    <span class="var-remove" onclick="document.getElementById('wm-${id}').remove()" style="position:absolute;right:12px;top:10px">x</span>
+  `;
+  card.style.position = 'relative';
+  el.appendChild(card);
+}
+
+function buildConfigFromWizard() {
+  const DIST_PARAMS = {
+    fixed: (p1) => ({value: p1}),
+    triangular: (p1,p2,p3) => ({low:p1, mode:p2, high:p3}),
+    uniform: (p1,p2) => ({low:p1, high:p2}),
+    normal: (p1,p2) => ({mean:p1, std:p2}),
+    lognormal: (p1,p2) => ({median:p1, spread:p2}),
+    bernoulli: (p1) => ({p:p1}),
+    poisson: (p1) => ({lambda:p1}),
+  };
+
+  const config = {
+    name: document.getElementById('wiz-name').value || 'Custom Domain',
+    n_simulations: 5000,
+    n_steps: parseInt(document.getElementById('wiz-steps').value) || 12,
+    step_label: document.getElementById('wiz-step-label').value || 'step',
+    seed: 42,
+    context: {
+      decision: document.getElementById('wiz-decision').value || '',
+    },
+    parameters: {},
+    controls: {},
+    exogenous: {},
+    initial_state: {},
+    step_logic: [],
+    accumulators: {},
+    metrics: {},
+    safety: { chance_constraints: [], cvar_constraints: [] },
+    fitness: { components: [] },
+    tunable: [],
+  };
+
+  // Variables
+  document.querySelectorAll('[data-wv]').forEach(el => {
+    const id = el.dataset.wv;
+    const field = el.dataset.field;
+    if (!wizardVars[id]) wizardVars[id] = {};
+    if (wizardVars[id] === null) return;
+    wizardVars[id][field] = el.value;
+  });
+
+  wizardVars.filter(v => v && v.name).forEach(v => {
+    const cat = v.cat || 'parameters';
+    const dist = v.dist || 'triangular';
+    const p1 = parseFloat(v.p1) || 0;
+    const p2 = parseFloat(v.p2) || 0;
+    const p3 = parseFloat(v.p3) || 0;
+    const params = DIST_PARAMS[dist] ? DIST_PARAMS[dist](p1, p2, p3) : {value: p1};
+    config[cat][v.name] = { distribution: dist, params };
+  });
+
+  // Steps
+  document.querySelectorAll('[data-ws]').forEach(el => {
+    const id = el.dataset.ws;
+    const field = el.dataset.field;
+    if (!wizardSteps[id]) wizardSteps[id] = {};
+    wizardSteps[id][field] = el.value;
+  });
+
+  wizardSteps.filter(s => s && s.target && s.expr).forEach(s => {
+    config.step_logic.push({ target: s.target, expr: s.expr });
+    // Auto-create accumulator
+    config.accumulators[s.target] = config.accumulators[s.target] || s.target;
+    config.initial_state[s.target] = 0;
+  });
+
+  // Metrics
+  document.querySelectorAll('[data-wm]').forEach(el => {
+    const id = el.dataset.wm;
+    const field = el.dataset.field;
+    if (!wizardMetrics[id]) wizardMetrics[id] = {};
+    wizardMetrics[id][field] = el.value;
+  });
+
+  wizardMetrics.filter(m => m && m.name && m.expr).forEach(m => {
+    config.metrics[m.name] = { expr: m.expr, format: m.format || 'number' };
+  });
+
+  return config;
+}
+
+async function validateWizard() {
+  const config = buildConfigFromWizard();
+  const res = await fetch('/api/validate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config })
+  });
+  const data = await res.json();
+  const el = document.getElementById('wiz-validation');
+  if (data.valid) {
+    el.innerHTML = '<div class="validation-ok">Config is valid! Click Save &amp; Load to use it.</div>';
+  } else {
+    el.innerHTML = `<div class="validation-errors"><strong>Validation errors:</strong><ul>${data.errors.map(e => '<li>'+esc(e)+'</li>').join('')}</ul></div>`;
+  }
+}
+
+async function saveWizard() {
+  const config = buildConfigFromWizard();
+  const res = await fetch('/api/save-domain', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config, filename: config.name })
+  });
+  const data = await res.json();
+  if (data.saved) {
+    closeWizard();
+    await loadDomains();
+    selectDomain(data.file);
+  } else {
+    const el = document.getElementById('wiz-validation');
+    el.innerHTML = `<div class="validation-errors"><strong>Errors:</strong><ul>${data.errors.map(e => '<li>'+esc(e)+'</li>').join('')}</ul></div>`;
+  }
+}
+
+async function validateJsonWizard() {
+  const el = document.getElementById('wiz-json-validation');
+  let config;
+  try {
+    config = JSON.parse(document.getElementById('wiz-json').value);
+  } catch(e) {
+    el.innerHTML = `<div class="validation-errors"><strong>Invalid JSON:</strong> ${esc(e.message)}</div>`;
+    return;
+  }
+  const res = await fetch('/api/validate', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config })
+  });
+  const data = await res.json();
+  if (data.valid) {
+    el.innerHTML = '<div class="validation-ok">Config is valid! Click Save &amp; Load to use it.</div>';
+  } else {
+    el.innerHTML = `<div class="validation-errors"><strong>Validation errors:</strong><ul>${data.errors.map(e => '<li>'+esc(e)+'</li>').join('')}</ul></div>`;
+  }
+}
+
+async function saveJsonWizard() {
+  let config;
+  try {
+    config = JSON.parse(document.getElementById('wiz-json').value);
+  } catch(e) {
+    document.getElementById('wiz-json-validation').innerHTML = `<div class="validation-errors">Invalid JSON: ${esc(e.message)}</div>`;
+    return;
+  }
+  const res = await fetch('/api/save-domain', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ config, filename: config.name || 'custom' })
+  });
+  const data = await res.json();
+  if (data.saved) {
+    closeWizard();
+    await loadDomains();
+    selectDomain(data.file);
+  } else {
+    document.getElementById('wiz-json-validation').innerHTML = `<div class="validation-errors"><ul>${data.errors.map(e => '<li>'+esc(e)+'</li>').join('')}</ul></div>`;
+  }
+}
+
+// ═══════════════════════════════════════════
+// BAYESIAN UPDATE
+// ═══════════════════════════════════════════
+function openBayesianUpdate() {
+  if (!currentConfig || !currentDomain) return;
+
+  const updatableVars = [];
+  for (const cat of ['parameters', 'controls', 'exogenous']) {
+    for (const [name, def] of Object.entries(currentConfig[cat] || {})) {
+      if (def.calibration?.updatable !== false) {
+        updatableVars.push({ name, def, cat });
+      }
+    }
+  }
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'bayes-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeBayesian(); };
+
+  let formRows = updatableVars.map(v => {
+    const cal = v.def.calibration || {};
+    const method = cal.update_method || 'auto-detect';
+    return `
+      <div class="var-card">
+        <div class="var-header">
+          <span class="var-name">${v.name.replace(/_/g, ' ')}</span>
+          <span style="font-size:10px;color:var(--text3)">${method}</span>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Observed values (comma-separated)</label>
+          <input class="form-input" id="obs-${v.name}" placeholder="e.g., 0.25, 0.30, 0.28">
+          <div class="form-hint">Current: ${JSON.stringify(v.def.params)}</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Update from Observed Data</h2>
+      <div class="modal-sub">Enter real-world observations to sharpen the simulation parameters using Bayesian updating. Leave fields blank to skip.</div>
+      ${formRows}
+      <div id="bayes-report"></div>
+      <div class="modal-actions">
+        <button class="btn btn-compare" onclick="closeBayesian()">Cancel</button>
+        <button class="btn btn-evolve" onclick="previewBayesian()">Preview Update</button>
+        <button class="btn btn-run" onclick="applyBayesian()">Apply &amp; Re-run</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function closeBayesian() {
+  const el = document.getElementById('bayes-overlay');
+  if (el) el.remove();
+}
+
+function collectObservations() {
+  const obs = {};
+  document.querySelectorAll('[id^="obs-"]').forEach(el => {
+    const name = el.id.replace('obs-', '');
+    const val = el.value.trim();
+    if (val) {
+      obs[name] = val.split(',').map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
+    }
+  });
+  return obs;
+}
+
+async function previewBayesian() {
+  const observations = collectObservations();
+  if (Object.keys(observations).length === 0) {
+    document.getElementById('bayes-report').innerHTML = '<div class="validation-errors">Enter at least one observation.</div>';
+    return;
+  }
+
+  const res = await fetch('/api/update', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({ domain: currentDomain, observations })
+  });
+  const data = await res.json();
+  if (data.error) {
+    document.getElementById('bayes-report').innerHTML = `<div class="validation-errors">${esc(data.error)}</div>`;
+    return;
+  }
+
+  let html = '<div style="margin-top:16px">';
+  for (const [name, report] of Object.entries(data.update_report)) {
+    if (report.skipped) {
+      html += `<div style="font-size:11px;color:var(--text3);margin-bottom:4px">${name}: skipped (${report.reason})</div>`;
+      continue;
+    }
+    const arrow = report.posterior_mean > report.prior_mean ? '+' : '';
+    const delta = ((report.posterior_mean - report.prior_mean) / Math.abs(report.prior_mean) * 100).toFixed(1);
+    html += `<div class="var-card">
+      <div style="font-weight:600;font-size:12px;margin-bottom:6px">${name.replace(/_/g,' ')}</div>
+      <div style="display:flex;gap:20px;font-size:11px;font-family:var(--mono)">
+        <div>Prior: <span style="color:var(--text3)">${report.prior_mean}</span></div>
+        <div>Posterior: <span style="color:var(--accent2)">${report.posterior_mean}</span></div>
+        <div style="color:${delta > 0 ? 'var(--green)' : 'var(--amber)'}">${arrow}${delta}%</div>
+      </div>
+      <div style="font-size:10px;color:var(--text3);margin-top:4px">
+        90% credible interval: [${report.credible_interval_90[0]}, ${report.credible_interval_90[1]}] |
+        Method: ${report.method} | ${report.observations_used} observations
+      </div>
+    </div>`;
+  }
+  html += '</div>';
+  document.getElementById('bayes-report').innerHTML = html;
+
+  // Store for apply
+  window._bayesianUpdated = data.updated_config;
+}
+
+async function applyBayesian() {
+  const observations = collectObservations();
+  if (Object.keys(observations).length === 0) return;
+
+  if (!window._bayesianUpdated) await previewBayesian();
+  if (!window._bayesianUpdated) return;
+
+  closeBayesian();
+
+  // Run simulation with updated config
+  const btn = document.getElementById('btn-run');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span>Re-running with updated priors...';
+  setStatus('Running with Bayesian-updated parameters...');
+
+  try {
+    const res = await fetch('/api/simulate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        config: window._bayesianUpdated,
+        n_simulations: parseInt(document.getElementById('n-sims').value),
+        seed: parseInt(document.getElementById('seed').value),
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    currentResults = data;
+    activeScenarioIdx = -1;
+    renderResults(data);
+    document.getElementById('btn-export').style.display = '';
+    setStatus(`Updated & simulated: ${data.n_simulations.toLocaleString()} runs in ${data.elapsed}s`);
+  } catch(e) {
+    document.getElementById('main').innerHTML = `<div class="empty-state"><div class="empty-title" style="color:var(--red)">Error</div><div class="empty-sub">${esc(e.message)}</div></div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Run Simulation';
+    window._bayesianUpdated = null;
+  }
 }
 
 // ═══════════════════════════════════════════

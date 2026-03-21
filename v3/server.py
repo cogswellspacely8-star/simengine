@@ -5,15 +5,16 @@ Run: python server.py
 Open: http://localhost:8420
 """
 
-import json, os, sys, time, copy, glob, math, statistics
+import json, os, sys, time, copy, glob, math, statistics, re
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kernel import (
     DomainConfig, run_monte_carlo, evaluate_safety,
-    compute_fitness, evolve, percentile
+    compute_fitness, evolve, percentile, SAMPLERS
 )
+from bayesian import update_config, update_parameter
 
 DOMAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "domains")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -49,7 +50,6 @@ def load_domain(filename):
 
 
 def build_histograms(raw_metrics, stats, n_bins=40):
-    """Build histogram data for each metric."""
     histograms = {}
     for metric, values in raw_metrics.items():
         if not values:
@@ -76,7 +76,6 @@ def build_histograms(raw_metrics, stats, n_bins=40):
 
 
 def generate_narrative(stats, safety, config_data):
-    """Generate plain-English narrative from simulation results."""
     lines = []
     context = config_data.get("context", {})
 
@@ -84,11 +83,8 @@ def generate_narrative(stats, safety, config_data):
         lines.append(f"**The question:** {context['decision']}")
         lines.append("")
 
-    metrics = config_data.get("metrics", {})
     for mname, s in stats.items():
         fmt = s.get("format", "number")
-        mdef = metrics.get(mname, {})
-
         if fmt == "dollar":
             median_str = f"${s['median']:,.0f}"
             p10_str = f"${s['p10']:,.0f}"
@@ -110,8 +106,7 @@ def generate_narrative(stats, safety, config_data):
 
     if safety:
         lines.append("")
-        all_pass = safety.get("all_passed", True)
-        if all_pass:
+        if safety.get("all_passed", True):
             lines.append("All safety constraints pass. The current configuration is within acceptable risk bounds.")
         else:
             violations = []
@@ -138,6 +133,149 @@ def generate_narrative(stats, safety, config_data):
         lines.append(f"**What good looks like:** {context['what_good_looks_like']}")
 
     return "\n".join(lines)
+
+
+def validate_config(data):
+    """Validate a domain config, return list of errors."""
+    errors = []
+    if not isinstance(data, dict):
+        return ["Config must be a JSON object"]
+
+    if not data.get("name"):
+        errors.append("Missing 'name' field")
+
+    n_steps = data.get("n_steps")
+    if not isinstance(n_steps, int) or n_steps < 1:
+        errors.append("'n_steps' must be a positive integer")
+
+    # Check variables exist
+    has_vars = False
+    for cat in ("parameters", "controls", "exogenous", "variables"):
+        if data.get(cat) and isinstance(data[cat], dict):
+            has_vars = True
+            for vname, vdef in data[cat].items():
+                dist = vdef.get("distribution")
+                if dist not in SAMPLERS:
+                    errors.append(f"Variable '{vname}': unknown distribution '{dist}'. Available: {', '.join(SAMPLERS.keys())}")
+                if not vdef.get("params"):
+                    errors.append(f"Variable '{vname}': missing 'params'")
+    if not has_vars:
+        errors.append("No variables defined (need at least one of: parameters, controls, exogenous)")
+
+    if not data.get("step_logic"):
+        errors.append("Missing 'step_logic' (at least one computation step needed)")
+    else:
+        for i, step in enumerate(data["step_logic"]):
+            if not step.get("target"):
+                errors.append(f"step_logic[{i}]: missing 'target'")
+            if not step.get("expr") and not step.get("sample"):
+                errors.append(f"step_logic[{i}]: missing 'expr' or 'sample'")
+
+    if not data.get("metrics"):
+        errors.append("Missing 'metrics' (need at least one output metric)")
+
+    # Try a quick test run
+    if not errors:
+        try:
+            cfg = DomainConfig.from_dict(data)
+            mc = run_monte_carlo(cfg, seed=42, n_override=10)
+            for mname in mc["stats"]:
+                if math.isnan(mc["stats"][mname]["mean"]):
+                    errors.append(f"Metric '{mname}' produced NaN — check your expressions")
+        except Exception as e:
+            errors.append(f"Test run failed: {str(e)}")
+
+    return errors
+
+
+def save_domain(filename, data):
+    """Save a domain config to the domains directory."""
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', filename.replace('.json', ''))
+    path = os.path.join(DOMAIN_DIR, safe_name + ".json")
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    return safe_name + ".json"
+
+
+def generate_report_html(results, config_data):
+    """Generate a standalone HTML report."""
+    domain = results.get("domain", "Simulation")
+    stats = results.get("stats", {})
+    safety = results.get("safety", {})
+    narrative = results.get("narrative", "")
+    ts = time.strftime("%Y-%m-%d %H:%M")
+
+    narrative_html = narrative.replace("**", "<strong>").replace("**", "</strong>")
+    # Proper bold tag handling
+    import re as _re
+    narrative_html = _re.sub(r'\*\*(.*?)\*\*', r'<strong>\1</strong>', narrative)
+    narrative_html = narrative_html.replace("\n\n", "<br><br>").replace("\n", "<br>")
+    narrative_html = _re.sub(r'^- ', '&bull; ', narrative_html, flags=_re.MULTILINE)
+
+    rows = ""
+    for mname, s in stats.items():
+        f = s.get("format", "number")
+        def _f(v):
+            if f == "dollar": return f"${v:,.0f}"
+            if f == "percent": return f"{v*100:.1f}%"
+            return f"{v:,.2f}"
+        rows += f"""<tr>
+            <td style="font-weight:600">{mname.replace('_',' ').title()}</td>
+            <td>{_f(s['median'])}</td><td>{_f(s['mean'])}</td>
+            <td>{_f(s['p10'])}</td><td>{_f(s['p90'])}</td><td>{_f(s['std'])}</td>
+        </tr>"""
+
+    safety_rows = ""
+    for c in safety.get("chance", []):
+        status = "PASS" if c["passed"] else "FAIL"
+        color = "#22c55e" if c["passed"] else "#ef4444"
+        safety_rows += f"""<tr>
+            <td><span style="color:{color};font-weight:700">{status}</span></td>
+            <td>P({c['metric'].replace('_',' ')} {c['condition']} {c['threshold']:,.0f}) = {c['actual_prob']*100:.1f}%</td>
+            <td>max {c['max_prob']*100:.0f}%</td>
+        </tr>"""
+    for c in safety.get("cvar", []):
+        status = "PASS" if c["passed"] else "FAIL"
+        color = "#22c55e" if c["passed"] else "#ef4444"
+        safety_rows += f"""<tr>
+            <td><span style="color:{color};font-weight:700">{status}</span></td>
+            <td>CVaR({c['alpha']*100:.0f}%) {c['metric'].replace('_',' ')} = ${c['actual_cvar']:,.0f}</td>
+            <td>min ${c['min_cvar']:,.0f}</td>
+        </tr>"""
+
+    return f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>SimEngine Report — {domain}</title>
+<style>
+body {{ font-family: -apple-system, system-ui, sans-serif; max-width: 800px; margin: 40px auto; padding: 0 20px; background: #0a0e17; color: #e2e8f0; }}
+h1 {{ font-size: 22px; border-bottom: 1px solid #2a3550; padding-bottom: 12px; }}
+h2 {{ font-size: 14px; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px; margin-top: 30px; }}
+table {{ width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13px; }}
+th {{ text-align: left; color: #64748b; font-size: 10px; text-transform: uppercase; letter-spacing: 1px; padding: 8px; border-bottom: 1px solid #2a3550; }}
+td {{ padding: 8px; border-bottom: 1px solid #1a2236; }}
+.narrative {{ background: #111827; border: 1px solid #2a3550; border-radius: 8px; padding: 16px; margin: 16px 0; line-height: 1.7; }}
+.meta {{ color: #64748b; font-size: 11px; }}
+.badge {{ display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; }}
+.fitness {{ font-size: 36px; font-weight: 700; color: #60a5fa; }}
+</style></head><body>
+<h1>SimEngine Report: {domain}</h1>
+<p class="meta">Generated {ts} | {results.get('n_simulations',0):,} simulations | {results.get('elapsed',0)}s</p>
+
+<div class="fitness">Fitness: {results.get('fitness', 0):.1f}</div>
+
+<h2>Narrative Summary</h2>
+<div class="narrative">{narrative_html}</div>
+
+<h2>Statistics</h2>
+<table>
+<tr><th>Metric</th><th>Median</th><th>Mean</th><th>P10</th><th>P90</th><th>Std Dev</th></tr>
+{rows}
+</table>
+
+{"<h2>Safety Constraints</h2><table><tr><th>Status</th><th>Constraint</th><th>Limit</th></tr>" + safety_rows + "</table>" if safety_rows else ""}
+
+<hr style="border-color:#2a3550;margin-top:40px">
+<p class="meta">Generated by SimEngine v3.0 — Monte Carlo Simulation &amp; Decision Intelligence</p>
+</body></html>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -203,12 +341,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/simulate":
             try:
-                filename = body.get("domain")
+                # Support both file-based and inline configs
+                if body.get("config"):
+                    data = body["config"]
+                else:
+                    filename = body.get("domain")
+                    data = load_domain(filename)
+
                 overrides = body.get("overrides", {})
                 n_sims = body.get("n_simulations", None)
                 seed = body.get("seed", 42)
-
-                data = load_domain(filename)
 
                 for key, value in overrides.items():
                     parts = key.split(".")
@@ -272,6 +414,66 @@ class Handler(BaseHTTPRequestHandler):
                     "history": result["history"],
                     "elapsed": round(elapsed, 1),
                 })
+            except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/validate":
+            try:
+                config = body.get("config", {})
+                errors = validate_config(config)
+                self._json_response({
+                    "valid": len(errors) == 0,
+                    "errors": errors,
+                })
+            except Exception as e:
+                self._json_response({"valid": False, "errors": [str(e)]})
+            return
+
+        if path == "/api/save-domain":
+            try:
+                config = body.get("config", {})
+                filename = body.get("filename", config.get("name", "custom"))
+                errors = validate_config(config)
+                if errors:
+                    self._json_response({"saved": False, "errors": errors}, 400)
+                    return
+                saved_name = save_domain(filename, config)
+                self._json_response({"saved": True, "file": saved_name})
+            except Exception as e:
+                self._json_response({"saved": False, "errors": [str(e)]}, 500)
+            return
+
+        if path == "/api/update":
+            try:
+                filename = body.get("domain")
+                observations = body.get("observations", {})
+                data = load_domain(filename)
+                updated_config, report = update_config(data, observations)
+
+                # Run a quick simulation with updated params
+                cfg = DomainConfig.from_dict(updated_config)
+                mc = run_monte_carlo(cfg, seed=42, n_override=1000)
+                safety = evaluate_safety(mc, cfg.safety) if cfg.safety else {}
+
+                self._json_response({
+                    "updated_config": updated_config,
+                    "update_report": report,
+                    "preview_stats": mc["stats"],
+                    "preview_safety": safety,
+                })
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/report":
+            try:
+                results = body.get("results", {})
+                config_data = body.get("config", {})
+                html = generate_report_html(results, config_data)
+                self._html_response(html)
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
             return
