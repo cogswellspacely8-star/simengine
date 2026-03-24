@@ -1,0 +1,183 @@
+{
+  "name": "Agricultural Crop Yield Under Climate Uncertainty",
+  "description": "Models agricultural yield over 6 growing seasons (3 years, 2 seasons each): temperature deviations, rainfall variability, pest pressure, and seed quality. Answers: Which crop variety to plant given climate uncertainty, and what's the expected return?",
+  "n_simulations": 5000,
+  "n_steps": 6,
+  "step_label": "season",
+  "seed": 42,
+
+  "context": {
+    "decision": "Which crop variety should I plant given increasing climate uncertainty?",
+    "key_levers": "Crop variety (drought-tolerant vs. high-yield), irrigation investment, and pest management spending determine outcomes under weather variability.",
+    "what_good_looks_like": "Average yield above 80% of baseline potential, positive profit in at least 85% of seasons, and less than 10% chance of catastrophic crop failure."
+  },
+
+  "parameters": {
+    "temperature_deviation": {
+      "distribution": "normal",
+      "params": {"mean": 0.8, "std": 1.2, "min": -3.0, "max": 5.0},
+      "calibration": {
+        "source": "NOAA Climate Normals: growing season temps trending +0.5-1.0C above 30yr average with increasing variance",
+        "updatable": true,
+        "update_method": "Normal-Normal conjugate from local weather station seasonal averages"
+      }
+    },
+    "rainfall_mm": {
+      "distribution": "lognormal",
+      "params": {"median": 400, "spread": 0.4, "min": 100, "max": 1000},
+      "calibration": {
+        "source": "USDA NASS: seasonal rainfall 300-600mm for rainfed agriculture in temperate zones",
+        "updatable": true
+      }
+    },
+    "pest_pressure": {
+      "distribution": "triangular",
+      "params": {"low": 0.02, "mode": 0.08, "high": 0.25},
+      "calibration": {
+        "source": "FAO: crop losses to pests average 5-15% globally; can exceed 25% in bad years",
+        "updatable": true
+      }
+    },
+    "seed_quality": {
+      "distribution": "triangular",
+      "params": {"low": 0.75, "mode": 0.92, "high": 0.99},
+      "calibration": {
+        "source": "Germination rate + genetic yield potential as fraction of theoretical max. Certified seed 90-98%."
+      }
+    }
+  },
+
+  "controls": {
+    "acres_planted": {
+      "distribution": "fixed",
+      "params": {"value": 200},
+      "calibration": {"source": "Farm acreage allocated to this crop"}
+    },
+    "baseline_yield_per_acre": {
+      "distribution": "fixed",
+      "params": {"value": 180},
+      "calibration": {"source": "USDA NASS: corn ~175 bu/acre, soybeans ~50 bu/acre, wheat ~50 bu/acre. Using corn baseline."}
+    },
+    "price_per_bushel": {
+      "distribution": "fixed",
+      "params": {"value": 5.50},
+      "calibration": {"source": "USDA ERS: corn $4.50-$6.50/bu recent range"}
+    },
+    "seed_cost_per_acre": {
+      "distribution": "fixed",
+      "params": {"value": 120},
+      "calibration": {"source": "USDA ERS: corn seed cost $100-$150/acre for biotech varieties"}
+    },
+    "fertilizer_per_acre": {
+      "distribution": "fixed",
+      "params": {"value": 95},
+      "calibration": {"source": "USDA ERS: fertilizer $80-$120/acre depending on soil tests"}
+    },
+    "irrigation_per_acre": {
+      "distribution": "fixed",
+      "params": {"value": 45},
+      "calibration": {"source": "USDA: supplemental irrigation cost $30-$80/acre where available"}
+    },
+    "pest_mgmt_per_acre": {
+      "distribution": "fixed",
+      "params": {"value": 35},
+      "calibration": {"source": "Herbicide + insecticide application $25-$50/acre"}
+    }
+  },
+
+  "exogenous": {
+    "market_price_shock": {
+      "distribution": "normal",
+      "params": {"mean": 1.0, "std": 0.12, "min": 0.65, "max": 1.50},
+      "calibration": {
+        "source": "CBOT futures volatility: seasonal price swings of +/-15-25% common for row crops"
+      }
+    },
+    "extreme_weather_event": {
+      "distribution": "bernoulli",
+      "params": {"p": 0.10},
+      "calibration": {
+        "source": "NOAA: probability of severe drought, flood, or hail event in a given growing season ~8-12%"
+      }
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "cumulative_bushels": 0,
+    "failed_seasons": 0
+  },
+
+  "step_logic": [
+    {"target": "temp_impact",          "expr": "clamp(1.0 - abs(temperature_deviation) * 0.06, 0.3, 1.1)"},
+    {"target": "optimal_rain",         "expr": "450"},
+    {"target": "rain_impact",          "expr": "clamp(1.0 - abs(rainfall_mm - optimal_rain) / 800, 0.2, 1.1)"},
+    {"target": "weather_penalty",      "expr": "0.4 if extreme_weather_event > 0 else 0.0"},
+    {"target": "effective_yield_rate", "expr": "clamp(seed_quality * temp_impact * rain_impact * (1 - pest_pressure) * (1 - weather_penalty), 0.05, 1.1)"},
+    {"target": "bushels_harvested",    "expr": "round(acres_planted * baseline_yield_per_acre * effective_yield_rate)"},
+    {"target": "effective_price",      "expr": "price_per_bushel * market_price_shock"},
+    {"target": "gross_revenue",        "expr": "bushels_harvested * effective_price"},
+    {"target": "total_input_cost",     "expr": "acres_planted * (seed_cost_per_acre + fertilizer_per_acre + irrigation_per_acre + pest_mgmt_per_acre)"},
+    {"target": "net_income",           "expr": "gross_revenue - total_input_cost"},
+    {"target": "is_failure",           "expr": "1 if effective_yield_rate < 0.3 else 0"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue": "cumulative_revenue + gross_revenue",
+    "cumulative_costs":   "cumulative_costs + total_input_cost",
+    "cumulative_bushels": "cumulative_bushels + bushels_harvested",
+    "failed_seasons":     "failed_seasons + is_failure"
+  },
+
+  "metrics": {
+    "total_revenue":       {"expr": "cumulative_revenue",                       "format": "dollar"},
+    "total_profit":        {"expr": "cumulative_revenue - cumulative_costs",    "format": "dollar"},
+    "total_bushels":       {"expr": "cumulative_bushels",                       "format": "number"},
+    "avg_yield_per_acre":  {"expr": "cumulative_bushels / (acres_planted * 6) if acres_planted > 0 else 0", "format": "number"},
+    "profit_per_acre":     {"expr": "(cumulative_revenue - cumulative_costs) / acres_planted if acres_planted > 0 else 0", "format": "dollar"},
+    "crop_failure_seasons":{"expr": "failed_seasons",                           "format": "number"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_profit",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.20,
+        "rationale": "No more than 20% chance of net loss over 3 years of planting"
+      },
+      {
+        "metric": "crop_failure_seasons",
+        "condition": "above",
+        "threshold": 2,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of more than 2 failed seasons out of 6"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "total_profit",
+        "alpha": 0.10,
+        "min_cvar": -100000,
+        "rationale": "In the worst 10% of scenarios, total loss over 3 years must not exceed $100k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, total_profit_median / 2000)",                "weight": 0.30, "name": "profitability"},
+      {"expr": "min(100, avg_yield_per_acre_median / 1.8)",           "weight": 0.25, "name": "yield_efficiency"},
+      {"expr": "max(0, 100 - crop_failure_seasons_median * 25)",      "weight": 0.25, "name": "resilience"},
+      {"expr": "max(0, 100 + profit_per_acre_p10 / 10)",              "weight": 0.20, "name": "downside_protection"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.acres_planted.params.value",           "range": [50, 500]},
+    {"path": "controls.irrigation_per_acre.params.value",     "range": [0, 120]},
+    {"path": "controls.pest_mgmt_per_acre.params.value",      "range": [10, 80]}
+  ]
+}

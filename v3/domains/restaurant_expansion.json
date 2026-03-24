@@ -1,0 +1,193 @@
+{
+  "name": "Restaurant Second Location Expansion",
+  "description": "Models a restaurant considering opening a second location over 24 months: daily covers, average check size, food costs, labor, and rent. Answers: Should I open a second location, and when does it become profitable?",
+  "n_simulations": 5000,
+  "n_steps": 24,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Should I open a second restaurant location, and can it sustain itself within 2 years?",
+    "key_levers": "Daily covers (foot traffic + marketing), average check size, food cost discipline, and labor scheduling are the controllable factors. Rent is locked at lease signing.",
+    "what_good_looks_like": "Second location breaks even within 12 months, cumulative profit positive by month 18, and less than 15% chance of total loss exceeding buildout cost."
+  },
+
+  "parameters": {
+    "daily_covers": {
+      "distribution": "normal",
+      "params": {"mean": 85, "std": 20, "min": 20, "max": 180},
+      "calibration": {
+        "source": "NRA: average full-service restaurant serves 60-120 covers/day depending on size and concept. New location ramps up.",
+        "updatable": true,
+        "update_method": "Normal-Normal conjugate from daily POS cover counts"
+      }
+    },
+    "avg_check": {
+      "distribution": "lognormal",
+      "params": {"median": 38, "spread": 0.2, "min": 18, "max": 80},
+      "calibration": {
+        "source": "NRA/Toast: average check $30-$55 for casual dining; $18-$30 for fast-casual",
+        "updatable": true
+      }
+    },
+    "food_cost_pct": {
+      "distribution": "triangular",
+      "params": {"low": 0.25, "mode": 0.32, "high": 0.42},
+      "calibration": {
+        "source": "NRA: food cost 28-35% of revenue for well-managed restaurants; spikes with inflation",
+        "updatable": true
+      }
+    },
+    "labor_pct": {
+      "distribution": "triangular",
+      "params": {"low": 0.25, "mode": 0.33, "high": 0.42},
+      "calibration": {
+        "source": "NRA: labor costs 30-35% of revenue; higher in high-minimum-wage markets",
+        "updatable": true
+      }
+    }
+  },
+
+  "controls": {
+    "rent": {
+      "distribution": "fixed",
+      "params": {"value": 9000},
+      "calibration": {"source": "Commercial lease: $25-$40/sqft/yr for 3000 sqft restaurant space in suburban market"}
+    },
+    "buildout_cost": {
+      "distribution": "fixed",
+      "params": {"value": 250000},
+      "calibration": {"source": "Restaurant buildout: $150-$400k depending on condition of space and concept"}
+    },
+    "monthly_utilities": {
+      "distribution": "fixed",
+      "params": {"value": 2500},
+      "calibration": {"source": "Electric, gas, water, waste for a full-service restaurant"}
+    },
+    "monthly_insurance": {
+      "distribution": "fixed",
+      "params": {"value": 1200},
+      "calibration": {"source": "General liability + property + workers comp for restaurant"}
+    },
+    "monthly_marketing": {
+      "distribution": "fixed",
+      "params": {"value": 2000},
+      "calibration": {"source": "Social media ads, local print, grand opening promotions"}
+    },
+    "days_open_per_month": {
+      "distribution": "fixed",
+      "params": {"value": 28},
+      "calibration": {"source": "Open 7 days/week with occasional closures"}
+    }
+  },
+
+  "exogenous": {
+    "ramp_up_factor": {
+      "distribution": "triangular",
+      "params": {"low": 0.50, "mode": 0.70, "high": 0.90},
+      "calibration": {
+        "source": "New restaurants typically operate at 50-80% of steady-state volume in first 3-6 months"
+      }
+    },
+    "seasonal_factor": {
+      "distribution": "uniform",
+      "params": {"low": 0.82, "high": 1.18},
+      "calibration": {
+        "source": "Restaurant seasonality: holiday bumps, summer patios, January slumps. +/-15-20%."
+      }
+    },
+    "food_inflation_monthly": {
+      "distribution": "normal",
+      "params": {"mean": 0.003, "std": 0.002, "min": -0.005, "max": 0.015},
+      "calibration": {
+        "source": "BLS CPI Food Away from Home: 3-6% annual inflation recently, ~0.3-0.5% monthly"
+      }
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "cash_balance": -250000,
+    "cumulative_food_cost": 0,
+    "cumulative_labor_cost": 0,
+    "months_profitable": 0,
+    "food_cost_multiplier": 1.0
+  },
+
+  "step_logic": [
+    {"target": "maturity",           "expr": "clamp(0.6 + _step * 0.04, 0.6, 1.0)"},
+    {"target": "effective_covers",   "expr": "round(daily_covers * maturity * ramp_up_factor * seasonal_factor * days_open_per_month)"},
+    {"target": "monthly_revenue",    "expr": "effective_covers * avg_check"},
+    {"target": "new_food_mult",      "expr": "food_cost_multiplier * (1 + food_inflation_monthly)"},
+    {"target": "food_cost",          "expr": "monthly_revenue * food_cost_pct * new_food_mult"},
+    {"target": "labor_cost",         "expr": "monthly_revenue * labor_pct"},
+    {"target": "fixed_costs",        "expr": "rent + monthly_utilities + monthly_insurance + monthly_marketing"},
+    {"target": "total_costs",        "expr": "food_cost + labor_cost + fixed_costs"},
+    {"target": "net_income",         "expr": "monthly_revenue - total_costs"},
+    {"target": "is_profitable",      "expr": "1 if net_income > 0 else 0"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue":     "cumulative_revenue + monthly_revenue",
+    "cumulative_costs":       "cumulative_costs + total_costs",
+    "cash_balance":           "cash_balance + net_income",
+    "cumulative_food_cost":   "cumulative_food_cost + food_cost",
+    "cumulative_labor_cost":  "cumulative_labor_cost + labor_cost",
+    "months_profitable":      "months_profitable + is_profitable",
+    "food_cost_multiplier":   "new_food_mult"
+  },
+
+  "metrics": {
+    "total_revenue":         {"expr": "cumulative_revenue",                        "format": "dollar"},
+    "total_profit":          {"expr": "cumulative_revenue - cumulative_costs",     "format": "dollar"},
+    "cash_position":         {"expr": "cash_balance",                              "format": "dollar"},
+    "roi":                   {"expr": "cash_balance / 250000",                     "format": "percent"},
+    "months_profitable":     {"expr": "months_profitable",                         "format": "number"},
+    "avg_food_cost_pct":     {"expr": "cumulative_food_cost / cumulative_revenue if cumulative_revenue > 0 else 0", "format": "percent"},
+    "avg_monthly_revenue":   {"expr": "cumulative_revenue / 24",                   "format": "dollar"},
+    "prime_cost_pct":        {"expr": "(cumulative_food_cost + cumulative_labor_cost) / cumulative_revenue if cumulative_revenue > 0 else 0", "format": "percent"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "cash_position",
+        "condition": "below",
+        "threshold": -350000,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of total cash drain exceeding $350k (buildout + $100k operating losses)"
+      },
+      {
+        "metric": "months_profitable",
+        "condition": "below",
+        "threshold": 8,
+        "max_prob": 0.25,
+        "rationale": "At least 75% chance of being profitable for 8+ out of 24 months"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "cash_position",
+        "alpha": 0.10,
+        "min_cvar": -400000,
+        "rationale": "In the worst 10% of scenarios, total cash outflow must not exceed $400k including buildout"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, (cash_position_median + 250000) / 3000)",     "weight": 0.30, "name": "payback"},
+      {"expr": "min(100, roi_median * 200 + 50)",                      "weight": 0.25, "name": "return_on_investment"},
+      {"expr": "min(100, months_profitable_median * 4.5)",              "weight": 0.25, "name": "consistency"},
+      {"expr": "max(0, 100 - prime_cost_pct_median * 120)",             "weight": 0.20, "name": "cost_discipline"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.rent.params.value",                "range": [5000, 15000]},
+    {"path": "controls.monthly_marketing.params.value",   "range": [500, 6000]},
+    {"path": "parameters.daily_covers.params.mean",       "range": [50, 150]}
+  ]
+}

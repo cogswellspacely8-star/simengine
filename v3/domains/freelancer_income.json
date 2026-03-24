@@ -1,0 +1,184 @@
+{
+  "name": "Freelance Developer/Designer — Income Viability",
+  "description": "Models a freelance developer or designer's income over 12 months: lead generation, project win rates, hourly rates, and capacity utilization. Answers: Can I go full-time freelance and sustain a livable income?",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Can I go full-time freelance and sustain a livable income?",
+    "key_levers": "Hourly rate, lead generation (networking + marketing), and win rate determine income. Keeping expenses low extends runway.",
+    "what_good_looks_like": "Average monthly income above $6k after expenses, savings buffer never depleted, and at least 80% chance of earning more than $60k/year."
+  },
+
+  "parameters": {
+    "inbound_leads": {
+      "distribution": "poisson",
+      "params": {"lambda": 6},
+      "calibration": {
+        "source": "Freelancer surveys (Upwork/Toptal): established freelancers get 4-10 qualified leads/month via referrals + platforms",
+        "updatable": true,
+        "update_method": "Gamma-Poisson conjugate from monthly lead counts"
+      }
+    },
+    "hourly_rate": {
+      "distribution": "triangular",
+      "params": {"low": 75, "mode": 120, "high": 200},
+      "calibration": {
+        "source": "Glassdoor/ZipRecruiter: freelance developer $80-$175/hr; designer $60-$150/hr depending on seniority and niche",
+        "updatable": true
+      }
+    },
+    "hours_per_project": {
+      "distribution": "lognormal",
+      "params": {"median": 30, "spread": 0.5, "min": 5, "max": 160},
+      "calibration": {
+        "source": "Typical project scope: small task 5-15hrs, medium project 20-60hrs, large engagement 80-160hrs"
+      }
+    },
+    "project_win_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.15, "mode": 0.30, "high": 0.55},
+      "calibration": {
+        "source": "Freelancers Union: proposal-to-close rate 20-40% for experienced freelancers with referrals",
+        "updatable": true,
+        "update_method": "Beta-Binomial conjugate from proposals sent and won"
+      }
+    }
+  },
+
+  "controls": {
+    "max_billable_hours": {
+      "distribution": "fixed",
+      "params": {"value": 140},
+      "calibration": {"source": "Realistic monthly capacity: ~32 hrs/week * 4.3 weeks, leaving time for admin/marketing"}
+    },
+    "monthly_living_expenses": {
+      "distribution": "fixed",
+      "params": {"value": 4500},
+      "calibration": {"source": "Rent + food + insurance + utilities for a single professional in a mid-cost city"}
+    },
+    "monthly_business_expenses": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Software subscriptions, coworking space, internet, accounting"}
+    },
+    "self_employment_tax_rate": {
+      "distribution": "fixed",
+      "params": {"value": 0.153},
+      "calibration": {"source": "US self-employment tax: 15.3% (Social Security + Medicare)"}
+    },
+    "starting_savings": {
+      "distribution": "fixed",
+      "params": {"value": 20000},
+      "calibration": {"source": "Emergency fund / runway buffer before going full-time"}
+    },
+    "marketing_spend": {
+      "distribution": "fixed",
+      "params": {"value": 300},
+      "calibration": {"source": "LinkedIn premium, portfolio hosting, occasional ads"}
+    }
+  },
+
+  "exogenous": {
+    "market_demand_factor": {
+      "distribution": "triangular",
+      "params": {"low": 0.70, "mode": 1.0, "high": 1.30},
+      "calibration": {
+        "source": "Freelance market cycles: tech hiring freezes reduce demand; boom times increase it. +/-30% swing."
+      }
+    },
+    "scope_creep_factor": {
+      "distribution": "triangular",
+      "params": {"low": 1.0, "mode": 1.15, "high": 1.50},
+      "calibration": {
+        "source": "Project management surveys: 50-80% of projects experience scope creep averaging 15-25% more hours"
+      }
+    }
+  },
+
+  "initial_state": {
+    "cumulative_income": 0,
+    "cumulative_expenses": 0,
+    "savings": 20000,
+    "total_projects": 0,
+    "total_hours_billed": 0,
+    "months_below_expenses": 0
+  },
+
+  "step_logic": [
+    {"target": "adjusted_leads",      "expr": "max(0, round(inbound_leads * market_demand_factor))"},
+    {"target": "projects_won",        "expr": "binomial(adjusted_leads, project_win_rate)"},
+    {"target": "raw_hours_needed",    "expr": "projects_won * hours_per_project * scope_creep_factor"},
+    {"target": "billable_hours",      "expr": "min(raw_hours_needed, max_billable_hours)"},
+    {"target": "gross_income",        "expr": "billable_hours * hourly_rate"},
+    {"target": "se_tax",              "expr": "gross_income * self_employment_tax_rate"},
+    {"target": "total_expenses",      "expr": "monthly_living_expenses + monthly_business_expenses + marketing_spend + se_tax"},
+    {"target": "net_income",          "expr": "gross_income - total_expenses"},
+    {"target": "new_savings",         "expr": "savings + net_income"},
+    {"target": "is_below_expenses",   "expr": "1 if gross_income < (monthly_living_expenses + monthly_business_expenses) else 0"}
+  ],
+
+  "accumulators": {
+    "cumulative_income":       "cumulative_income + gross_income",
+    "cumulative_expenses":     "cumulative_expenses + total_expenses",
+    "savings":                 "new_savings",
+    "total_projects":          "total_projects + projects_won",
+    "total_hours_billed":      "total_hours_billed + billable_hours",
+    "months_below_expenses":   "months_below_expenses + is_below_expenses"
+  },
+
+  "metrics": {
+    "annual_gross_income":   {"expr": "cumulative_income",                              "format": "dollar"},
+    "annual_net_income":     {"expr": "cumulative_income - cumulative_expenses",         "format": "dollar"},
+    "ending_savings":        {"expr": "savings",                                         "format": "dollar"},
+    "total_projects":        {"expr": "total_projects",                                  "format": "number"},
+    "avg_monthly_income":    {"expr": "cumulative_income / 12",                          "format": "dollar"},
+    "utilization_rate":      {"expr": "total_hours_billed / (140 * 12)",                 "format": "percent"},
+    "lean_months":           {"expr": "months_below_expenses",                           "format": "number"},
+    "effective_hourly":      {"expr": "(cumulative_income - cumulative_expenses) / total_hours_billed if total_hours_billed > 0 else 0", "format": "dollar"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "ending_savings",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of depleting savings entirely within the year"
+      },
+      {
+        "metric": "annual_gross_income",
+        "condition": "below",
+        "threshold": 60000,
+        "max_prob": 0.25,
+        "rationale": "At least 75% chance of grossing $60k+ (minimum livable for most markets)"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "annual_net_income",
+        "alpha": 0.10,
+        "min_cvar": -20000,
+        "rationale": "In the worst 10% of scenarios, net annual loss must not exceed $20k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, annual_net_income_median / 800)",             "weight": 0.30, "name": "income_level"},
+      {"expr": "min(100, ending_savings_median / 300)",                "weight": 0.25, "name": "financial_safety"},
+      {"expr": "max(0, 100 - lean_months_median * 10)",                "weight": 0.25, "name": "consistency"},
+      {"expr": "min(100, utilization_rate_median * 120)",              "weight": 0.20, "name": "utilization"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "parameters.hourly_rate.params.mode",            "range": [60, 250]},
+    {"path": "controls.max_billable_hours.params.value",      "range": [80, 180]},
+    {"path": "controls.marketing_spend.params.value",         "range": [0, 1500]}
+  ]
+}

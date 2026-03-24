@@ -1,0 +1,629 @@
+openapi: "3.0.3"
+info:
+  title: SimEngine v3 API
+  description: |
+    Monte Carlo simulation engine with Bayesian updating, evolutionary optimization,
+    and safety constraints. Accepts domain configuration as JSON, runs simulations,
+    and returns statistical summaries, trajectories, histograms, safety reports,
+    fitness scores, and narrative interpretations.
+  version: "3.0.0"
+  contact:
+    name: SimEngine
+
+servers:
+  - url: http://localhost:8420
+    description: Local development server
+
+paths:
+  /api/domains:
+    get:
+      operationId: listDomains
+      summary: List all available domain configurations
+      description: |
+        Returns an array of domain summary objects for every .json file in the
+        domains directory. Useful for discovering what pre-built models are available.
+      responses:
+        "200":
+          description: Array of domain summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DomainSummary"
+
+  /api/domain/{filename}:
+    get:
+      operationId: getDomain
+      summary: Get full domain configuration by filename
+      description: |
+        Returns the complete JSON configuration for a domain. The filename should
+        match a file in the domains directory (e.g. "food_truck.json").
+      parameters:
+        - name: filename
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Domain config filename (e.g. "food_truck.json")
+      responses:
+        "200":
+          description: Full domain configuration object
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DomainConfig"
+        "404":
+          description: Domain file not found
+
+  /api/simulate:
+    post:
+      operationId: simulate
+      summary: Run a Monte Carlo simulation
+      description: |
+        Runs a Monte Carlo simulation. You can either provide a full inline config
+        object, or reference a saved domain file by name and optionally apply
+        overrides. Returns full statistical results including trajectories,
+        histograms, safety constraint evaluations, fitness, and a narrative summary.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SimulateRequest"
+      responses:
+        "200":
+          description: Simulation results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SimulateResponse"
+        "400":
+          description: Invalid configuration or request
+
+  /api/evolve:
+    post:
+      operationId: evolve
+      summary: Evolutionary optimization over tunable parameters
+      description: |
+        Runs an evolutionary optimization loop over the tunable parameters defined
+        in a domain config. Searches for the parameter values that maximize the
+        fitness function while respecting safety constraints.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvolveRequest"
+      responses:
+        "200":
+          description: Evolution results with best parameters found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolveResponse"
+        "400":
+          description: Invalid request or domain has no tunable parameters
+
+  /api/validate:
+    post:
+      operationId: validateConfig
+      summary: Validate a domain configuration
+      description: |
+        Checks a domain configuration object for structural and semantic errors
+        without running a simulation. Returns whether the config is valid and
+        any error messages.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - config
+              properties:
+                config:
+                  $ref: "#/components/schemas/DomainConfig"
+      responses:
+        "200":
+          description: Validation result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ValidateResponse"
+
+  /api/save-domain:
+    post:
+      operationId: saveDomain
+      summary: Save a domain configuration to disk
+      description: |
+        Persists a domain configuration as a JSON file in the domains directory.
+        If filename is omitted, one is generated from the domain name.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - config
+              properties:
+                config:
+                  $ref: "#/components/schemas/DomainConfig"
+                filename:
+                  type: string
+                  description: Optional filename to save as (e.g. "my_model.json")
+      responses:
+        "200":
+          description: Save result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SaveResponse"
+
+  /api/update:
+    post:
+      operationId: bayesianUpdate
+      summary: Bayesian update of parameter distributions with observed data
+      description: |
+        Takes a domain name and a set of real-world observations for one or more
+        variables. Updates the prior distributions to posterior distributions using
+        Bayesian inference. Returns the updated config along with a report showing
+        how each distribution shifted, and a preview of what the simulation results
+        would look like with the updated parameters.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateRequest"
+      responses:
+        "200":
+          description: Bayesian update results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpdateResponse"
+        "400":
+          description: Invalid domain or observations
+
+  /api/report:
+    post:
+      operationId: generateReport
+      summary: Generate a standalone HTML report
+      description: |
+        Takes simulation results and the config that produced them, and returns
+        a self-contained HTML report with charts and tables.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - results
+                - config
+              properties:
+                results:
+                  type: object
+                  description: The full results object from /api/simulate
+                config:
+                  $ref: "#/components/schemas/DomainConfig"
+      responses:
+        "200":
+          description: Standalone HTML report
+          content:
+            text/html:
+              schema:
+                type: string
+
+components:
+  schemas:
+    DomainSummary:
+      type: object
+      properties:
+        file:
+          type: string
+          description: Filename of the domain config
+        name:
+          type: string
+        description:
+          type: string
+        context:
+          $ref: "#/components/schemas/Context"
+        n_simulations:
+          type: integer
+        n_steps:
+          type: integer
+        step_label:
+          type: string
+
+    Context:
+      type: object
+      description: Human-readable context about what this model represents
+      properties:
+        decision:
+          type: string
+          description: The decision this model is meant to inform
+        key_levers:
+          type: string
+          description: What the decision-maker can control
+        what_good_looks_like:
+          type: string
+          description: Definition of a successful outcome
+
+    Distribution:
+      type: object
+      description: |
+        A probability distribution specification. The "distribution" field names the
+        type, and "params" holds the distribution-specific parameters. An optional
+        "calibration" string provides human context for the chosen distribution.
+      required:
+        - distribution
+        - params
+      properties:
+        distribution:
+          type: string
+          enum:
+            - fixed
+            - uniform
+            - triangular
+            - normal
+            - lognormal
+            - bernoulli
+            - poisson
+            - student_t
+          description: |
+            Distribution type. Available distributions and their params:
+            - fixed: {value}
+            - uniform: {low, high}
+            - triangular: {low, mode, high}
+            - normal: {mean, std, min?, max?}
+            - lognormal: {median, spread, min?, max?}
+            - bernoulli: {p}
+            - poisson: {lambda}
+            - student_t: {mean?, scale?, df?, min?, max?}
+        params:
+          type: object
+          description: Distribution-specific parameters (see distribution field docs)
+        calibration:
+          type: string
+          description: Human-readable explanation of why this distribution was chosen
+
+    StepLogicEntry:
+      type: object
+      required:
+        - target
+        - expr
+      properties:
+        target:
+          type: string
+          description: Variable name to assign the result to
+        expr:
+          type: string
+          description: |
+            Python-style expression evaluated each step. Can reference parameter
+            names, control names, exogenous names, state variables, and the
+            special variable "step". Safe builtins available: min, max, abs,
+            round, sum, len, int, float, sqrt, log, exp, ceil, floor, pow,
+            random, gauss, binomial, clamp, range.
+
+    MetricDef:
+      type: object
+      required:
+        - expr
+      properties:
+        expr:
+          type: string
+          description: Expression to compute the metric from accumulators and state
+        format:
+          type: string
+          enum: [dollar, number, percent]
+          description: Display format hint
+
+    ChanceConstraint:
+      type: object
+      required:
+        - metric
+        - condition
+        - threshold
+        - max_prob
+      properties:
+        metric:
+          type: string
+          description: Name of a metric defined in the metrics section
+        condition:
+          type: string
+          enum: ["<", ">", "<=", ">="]
+        threshold:
+          type: number
+        max_prob:
+          type: number
+          description: Maximum acceptable probability (0-1) of violating the constraint
+
+    CVaRConstraint:
+      type: object
+      required:
+        - metric
+        - alpha
+      properties:
+        metric:
+          type: string
+        alpha:
+          type: number
+          description: Tail probability (e.g. 0.05 for worst 5%)
+        min_cvar:
+          type: number
+          description: Minimum acceptable CVaR value
+
+    FitnessComponent:
+      type: object
+      required:
+        - expr
+        - weight
+      properties:
+        expr:
+          type: string
+          description: Expression evaluated over metric values
+        weight:
+          type: number
+        name:
+          type: string
+
+    TunableParam:
+      type: object
+      required:
+        - path
+        - range
+      properties:
+        path:
+          type: string
+          description: Dot-separated path to the parameter (e.g. "controls.price.params.value")
+        range:
+          type: array
+          items:
+            type: number
+          minItems: 2
+          maxItems: 2
+          description: "[low, high] bounds for optimization"
+
+    DomainConfig:
+      type: object
+      description: Complete domain configuration for a simulation model
+      required:
+        - name
+        - parameters
+        - step_logic
+        - metrics
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        n_simulations:
+          type: integer
+          default: 1000
+        n_steps:
+          type: integer
+          default: 1
+          description: Number of time steps per simulation
+        step_label:
+          type: string
+          description: Label for each step (e.g. "Month", "Week", "Day")
+        seed:
+          type: integer
+          description: Random seed for reproducibility
+        context:
+          $ref: "#/components/schemas/Context"
+        parameters:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Distribution"
+          description: Uncertain input parameters
+        controls:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Distribution"
+          description: Decision variables the user controls
+        exogenous:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/Distribution"
+          description: External factors outside the user's control
+        initial_state:
+          type: object
+          additionalProperties:
+            type: number
+          description: Starting values for state/accumulator variables
+        step_logic:
+          type: array
+          items:
+            $ref: "#/components/schemas/StepLogicEntry"
+          description: Ordered list of computations evaluated each time step
+        accumulators:
+          type: object
+          additionalProperties:
+            type: string
+          description: |
+            Named expressions that accumulate across steps.
+            Each value is an expression string (e.g. "total_revenue + revenue").
+        metrics:
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/MetricDef"
+          description: Named output metrics computed from final state
+        safety:
+          type: object
+          properties:
+            chance_constraints:
+              type: array
+              items:
+                $ref: "#/components/schemas/ChanceConstraint"
+            cvar_constraints:
+              type: array
+              items:
+                $ref: "#/components/schemas/CVaRConstraint"
+        fitness:
+          type: object
+          properties:
+            components:
+              type: array
+              items:
+                $ref: "#/components/schemas/FitnessComponent"
+        tunable:
+          type: array
+          items:
+            $ref: "#/components/schemas/TunableParam"
+
+    SimulateRequest:
+      type: object
+      description: |
+        Provide either "config" (inline configuration) or "domain" (filename to load).
+        If "domain" is provided, "overrides" can patch specific fields.
+      properties:
+        domain:
+          type: string
+          description: Filename of a saved domain to load (e.g. "food_truck.json")
+        config:
+          $ref: "#/components/schemas/DomainConfig"
+        overrides:
+          type: object
+          description: Key-value overrides to apply on top of the loaded domain config
+        n_simulations:
+          type: integer
+          description: Override the number of simulations to run
+        seed:
+          type: integer
+          description: Override random seed
+
+    SimulateResponse:
+      type: object
+      properties:
+        domain:
+          type: string
+        n_simulations:
+          type: integer
+        elapsed:
+          type: number
+          description: Wall-clock seconds
+        stats:
+          type: object
+          description: |
+            Per-metric statistics. Keys are metric names, values are objects with
+            fields like mean, median, std, p5, p25, p75, p95, min, max.
+        trajectories:
+          type: object
+          description: |
+            Per-accumulator trajectory data across steps. Keys are accumulator names,
+            values contain arrays of step-by-step percentile bands.
+        histograms:
+          type: object
+          description: Per-metric histogram data (bins and counts)
+        safety:
+          type: object
+          description: |
+            Safety constraint evaluation results. Shows each constraint, whether
+            it passed, and the observed probability or CVaR value.
+        fitness:
+          type: number
+          description: Scalar fitness score (if fitness function is defined)
+        narrative:
+          type: string
+          description: Human-readable summary of results
+        context:
+          $ref: "#/components/schemas/Context"
+
+    EvolveRequest:
+      type: object
+      required:
+        - domain
+      properties:
+        domain:
+          type: string
+          description: Filename of domain with tunable parameters
+        generations:
+          type: integer
+          default: 20
+        population:
+          type: integer
+          default: 30
+
+    EvolveResponse:
+      type: object
+      properties:
+        domain:
+          type: string
+        best_fitness:
+          type: number
+        best_stats:
+          type: object
+          description: Stats from simulation with best parameters
+        best_safety:
+          type: object
+          description: Safety evaluation with best parameters
+        history:
+          type: array
+          items:
+            type: object
+          description: Per-generation best fitness history
+        elapsed:
+          type: number
+
+    ValidateResponse:
+      type: object
+      properties:
+        valid:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+
+    SaveResponse:
+      type: object
+      properties:
+        saved:
+          type: boolean
+        file:
+          type: string
+          description: Path where the config was saved
+        errors:
+          type: array
+          items:
+            type: string
+
+    UpdateRequest:
+      type: object
+      required:
+        - domain
+        - observations
+      properties:
+        domain:
+          type: string
+          description: Filename of the domain to update
+        observations:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: number
+          description: |
+            Map of variable names to arrays of observed values.
+            Example: {"daily_customers": [45, 52, 38, 61, 55]}
+
+    UpdateResponse:
+      type: object
+      properties:
+        updated_config:
+          $ref: "#/components/schemas/DomainConfig"
+        update_report:
+          type: object
+          description: |
+            Per-variable report showing prior distribution, posterior distribution,
+            and how the parameters shifted.
+        preview_stats:
+          type: object
+          description: Simulation stats using the updated config
+        preview_safety:
+          type: object
+          description: Safety evaluation using the updated config

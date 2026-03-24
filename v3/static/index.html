@@ -780,10 +780,233 @@ canvas { width: 100%; display: block; }
 }
 .action-btn:hover { border-color: var(--border2); color: var(--text); }
 
+/* ── Diagnostics panels ── */
+.diag-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.diag-section .diag-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text3);
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+
+.diag-section .diag-subtitle {
+  font-size: 12px;
+  color: var(--text2);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+/* Tornado chart */
+.tornado-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+
+.tornado-label {
+  width: 180px;
+  text-align: right;
+  color: var(--text2);
+  font-size: 10px;
+  flex-shrink: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tornado-bar-container {
+  flex: 1;
+  height: 22px;
+  background: var(--surface2);
+  border-radius: 4px;
+  position: relative;
+  overflow: hidden;
+}
+
+.tornado-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.5s ease;
+}
+
+.tornado-value {
+  width: 70px;
+  text-align: right;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text3);
+  flex-shrink: 0;
+}
+
+/* Convergence table */
+.conv-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.conv-table th {
+  text-align: left;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.conv-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(37,45,64,0.5);
+  color: var(--text2);
+}
+
+.conv-table tr.converged td { color: var(--green); }
+
+/* Baseline comparison */
+.baseline-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(37,45,64,0.5);
+  font-size: 11px;
+  font-family: var(--mono);
+}
+
+.baseline-row.header {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  font-weight: 600;
+  font-family: var(--font);
+}
+
+.baseline-hidden-risk {
+  color: var(--amber);
+  font-weight: 600;
+}
+
+/* Loading overlay */
+.loading-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8,9,13,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  backdrop-filter: blur(4px);
+}
+
+.loading-box {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 32px 48px;
+  text-align: center;
+}
+
+.loading-box .spinner-large {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin: 0 auto 16px;
+}
+
+.loading-box .loading-text {
+  font-size: 13px;
+  color: var(--text2);
+}
+
+.loading-box .loading-sub {
+  font-size: 11px;
+  color: var(--text3);
+  margin-top: 4px;
+}
+
+/* Diagnostics buttons */
+.diag-btn-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.btn-diag {
+  display: block;
+  padding: 6px 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface2);
+  color: var(--text3);
+  font-family: var(--font);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  transition: all 0.15s;
+  text-align: center;
+}
+
+.btn-diag:hover { border-color: var(--cyan); color: var(--cyan); }
+.btn-diag:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Toast notifications */
+.toast {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 12px;
+  z-index: 300;
+  animation: slideIn 0.3s ease, fadeOut 0.3s ease 2.7s;
+  pointer-events: none;
+}
+
+.toast.error { background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3); color: var(--red); }
+.toast.success { background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3); color: var(--green); }
+.toast.info { background: rgba(59,130,246,0.15); border: 1px solid rgba(59,130,246,0.3); color: var(--accent2); }
+
+@keyframes slideIn { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+
 /* ── Responsive ── */
 @media (max-width: 900px) {
   .app { grid-template-columns: 1fr; }
   .sidebar { max-height: 50vh; }
+  .risk-section { grid-template-columns: 1fr; }
+  .stats-grid { grid-template-columns: 1fr 1fr !important; }
+  .baseline-row { grid-template-columns: 1fr 1fr; gap: 6px; font-size: 10px; }
+  .tornado-label { width: 100px; }
+  .diag-btn-row { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 600px) {
+  header { padding: 8px 12px; }
+  .main { padding: 12px 14px; }
+  .stats-grid { grid-template-columns: 1fr !important; }
+  .context-banner { padding: 12px; }
+  .results-header h2 { font-size: 15px; }
 }
 </style>
 </head>
@@ -831,6 +1054,12 @@ canvas { width: 100%; display: block; }
       <button class="btn btn-compare" id="btn-compare" onclick="saveScenario()">Save Scenario</button>
       <button class="btn btn-compare" id="btn-export" onclick="exportReport()" style="display:none">Export Report</button>
       <button class="btn btn-compare" id="btn-update" onclick="openBayesianUpdate()" style="display:none">Update from Data</button>
+      <div class="section-title" style="margin-top:16px">Diagnostics</div>
+      <div class="diag-btn-row">
+        <button class="btn-diag" onclick="runConvergence()" title="Prove sample size is sufficient">Converge</button>
+        <button class="btn-diag" onclick="runSensitivity()" title="Which inputs matter most?">Sensitivity</button>
+        <button class="btn-diag" onclick="runBaseline()" title="Compare to spreadsheet forecast">Baseline</button>
+      </div>
     </div>
   </aside>
 
@@ -2326,6 +2555,349 @@ async function applyBayesian() {
     btn.textContent = 'Run Simulation';
     window._bayesianUpdated = null;
   }
+}
+
+// ═══════════════════════════════════════════
+// TOAST + LOADING
+// ═══════════════════════════════════════════
+function showToast(msg, type = 'info') {
+  const t = document.createElement('div');
+  t.className = 'toast ' + type;
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+function showLoading(msg, sub) {
+  const el = document.createElement('div');
+  el.className = 'loading-overlay';
+  el.id = 'loading-overlay';
+  el.innerHTML = `<div class="loading-box">
+    <div class="spinner-large"></div>
+    <div class="loading-text">${esc(msg)}</div>
+    ${sub ? `<div class="loading-sub">${esc(sub)}</div>` : ''}
+  </div>`;
+  document.body.appendChild(el);
+}
+
+function hideLoading() {
+  const el = document.getElementById('loading-overlay');
+  if (el) el.remove();
+}
+
+// ═══════════════════════════════════════════
+// DIAGNOSTICS: CONVERGENCE
+// ═══════════════════════════════════════════
+async function runConvergence() {
+  if (!currentDomain) return showToast('Select a domain first', 'error');
+  showLoading('Running convergence analysis', 'Testing sample sizes up to 10,000...');
+
+  try {
+    const metric = currentResults ? Object.keys(currentResults.stats)[0] : null;
+    const res = await fetch('/api/convergence', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ domain: currentDomain, metric, max_runs: 10000 })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderConvergence(data);
+    showToast(`Convergence: ${data.assessment}`, data.convergence_n ? 'success' : 'info');
+  } catch(e) {
+    showToast('Convergence error: ' + e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderConvergence(data) {
+  const main = document.getElementById('main');
+  let html = `
+    <div class="results-header">
+      <h2>Convergence Analysis</h2>
+      <span class="results-meta">${data.elapsed}s &middot; ${data.total_runs.toLocaleString()} max runs</span>
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Estimator Stability: ${esc(data.metric.replace(/_/g, ' '))}</div>
+      <div class="diag-subtitle">
+        ${data.convergence_n
+          ? `Converged at <strong style="color:var(--green)">N=${data.convergence_n.toLocaleString()}</strong> (95% CI &lt; 5% of mean)`
+          : `<span style="color:var(--amber)">Did not converge within ${data.total_runs.toLocaleString()} runs</span>`}
+      </div>
+      <table class="conv-table">
+        <tr><th>N</th><th>Mean</th><th>Median</th><th>SE(mean)</th><th>95% CI</th><th>P10</th><th>P90</th></tr>
+        ${data.checkpoints.map(r => {
+          const ci = r.ci95_pct < 999 ? r.ci95_pct.toFixed(1) + '%' : '>999%';
+          const converged = data.convergence_n && r.n >= data.convergence_n;
+          return `<tr class="${converged ? 'converged' : ''}">
+            <td>${r.n.toLocaleString()}</td>
+            <td>${r.mean.toLocaleString()}</td>
+            <td>${r.median.toLocaleString()}</td>
+            <td>${r.se_mean.toLocaleString()}</td>
+            <td>${ci}</td>
+            <td>${r.p10.toLocaleString()}</td>
+            <td>${r.p90.toLocaleString()}</td>
+          </tr>`;
+        }).join('')}
+      </table>
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Convergence Chart</div>
+      <canvas id="conv-canvas" height="260"></canvas>
+    </div>`;
+
+  if (data.final_stability?.mean_drift_pct != null) {
+    html += `<div class="diag-section">
+      <div class="diag-title">Final Stability</div>
+      <div style="display:flex;gap:24px;font-size:12px;font-family:var(--mono)">
+        <div>Mean drift: <span style="color:${data.final_stability.mean_drift_pct < 1 ? 'var(--green)' : 'var(--amber)'}">${data.final_stability.mean_drift_pct.toFixed(2)}%</span></div>
+        <div>P10 drift: <span style="color:${data.final_stability.p10_drift_pct < 2 ? 'var(--green)' : 'var(--amber)'}">${data.final_stability.p10_drift_pct.toFixed(2)}%</span></div>
+        <div>P90 drift: <span style="color:${data.final_stability.p90_drift_pct < 2 ? 'var(--green)' : 'var(--amber)'}">${data.final_stability.p90_drift_pct.toFixed(2)}%</span></div>
+      </div>
+    </div>`;
+  }
+
+  main.innerHTML = html;
+  requestAnimationFrame(() => drawConvergenceChart(data));
+}
+
+function drawConvergenceChart(data) {
+  const canvas = document.getElementById('conv-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 260 * dpr;
+  canvas.style.height = '260px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 260;
+
+  const pts = data.checkpoints;
+  const means = pts.map(p => p.mean);
+  const p10s = pts.map(p => p.p10);
+  const p90s = pts.map(p => p.p90);
+  const allVals = [...means, ...p10s, ...p90s];
+  const minV = Math.min(...allVals) * 0.95;
+  const maxV = Math.max(...allVals) * 1.05;
+  const pad = { top: 20, right: 20, bottom: 30, left: 70 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+  const rangeV = maxV - minV || 1;
+  const n = pts.length;
+
+  function x(i) { return pad.left + (i / Math.max(1, n-1)) * cw; }
+  function y(v) { return pad.top + ch - ((v - minV) / rangeV) * ch; }
+
+  ctx.fillStyle = '#0f1219';
+  ctx.fillRect(0, 0, W, H);
+
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  ctx.font = '10px ' + mono;
+  ctx.strokeStyle = '#1a2236'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) {
+    const yy = pad.top + (ch/4)*i;
+    ctx.beginPath(); ctx.moveTo(pad.left, yy); ctx.lineTo(W-pad.right, yy); ctx.stroke();
+    ctx.fillStyle = '#475569'; ctx.textAlign = 'right';
+    const val = maxV - (rangeV/4)*i;
+    ctx.fillText(Math.round(val).toLocaleString(), pad.left-8, yy+4);
+  }
+
+  // X labels
+  ctx.fillStyle = '#475569'; ctx.textAlign = 'center';
+  pts.forEach((p, i) => {
+    if (i % Math.max(1, Math.floor(n/6)) === 0 || i === n-1)
+      ctx.fillText(p.n.toLocaleString(), x(i), H-8);
+  });
+
+  // P10-P90 band
+  ctx.fillStyle = 'rgba(59, 130, 246, 0.08)';
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) { i === 0 ? ctx.moveTo(x(i), y(p90s[i])) : ctx.lineTo(x(i), y(p90s[i])); }
+  for (let i = n-1; i >= 0; i--) ctx.lineTo(x(i), y(p10s[i]));
+  ctx.closePath(); ctx.fill();
+
+  // P10/P90 dashed
+  ctx.strokeStyle = 'rgba(59,130,246,0.25)'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(p10s[i])):ctx.lineTo(x(i),y(p10s[i]));} ctx.stroke();
+  ctx.beginPath(); for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(p90s[i])):ctx.lineTo(x(i),y(p90s[i]));} ctx.stroke();
+
+  // Mean line
+  ctx.setLineDash([]);
+  ctx.strokeStyle = '#3b82f6'; ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  for (let i=0;i<n;i++){i===0?ctx.moveTo(x(i),y(means[i])):ctx.lineTo(x(i),y(means[i]));}
+  ctx.stroke();
+
+  // Convergence marker
+  if (data.convergence_n) {
+    const ci = pts.findIndex(p => p.n >= data.convergence_n);
+    if (ci >= 0) {
+      ctx.strokeStyle = '#22c55e'; ctx.lineWidth = 1.5; ctx.setLineDash([6,4]);
+      ctx.beginPath(); ctx.moveTo(x(ci), pad.top); ctx.lineTo(x(ci), pad.top + ch); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#22c55e'; ctx.font = '10px ' + mono; ctx.textAlign = 'center';
+      ctx.fillText('converged N=' + data.convergence_n.toLocaleString(), x(ci), pad.top - 4);
+    }
+  }
+
+  // Legend
+  const lx = W - pad.right - 100;
+  ctx.font = '10px ' + mono;
+  ctx.fillStyle = '#3b82f6'; ctx.textAlign = 'left'; ctx.fillText('Mean', lx, pad.top + 14);
+  ctx.fillStyle = 'rgba(59,130,246,0.4)'; ctx.fillText('P10 / P90', lx, pad.top + 28);
+}
+
+// ═══════════════════════════════════════════
+// DIAGNOSTICS: SENSITIVITY (TORNADO CHART)
+// ═══════════════════════════════════════════
+async function runSensitivity() {
+  if (!currentDomain) return showToast('Select a domain first', 'error');
+  showLoading('Running sensitivity analysis', 'Perturbing each parameter to measure impact...');
+
+  try {
+    const metric = currentResults ? Object.keys(currentResults.stats)[0] : null;
+    const res = await fetch('/api/sensitivity', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ domain: currentDomain, metric, n_base: 1000, n_perturb: 5 })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderSensitivity(data);
+    showToast(`Sensitivity: ${data.sensitivities.length} parameters ranked`, 'success');
+  } catch(e) {
+    showToast('Sensitivity error: ' + e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderSensitivity(data) {
+  const main = document.getElementById('main');
+  const top = data.sensitivities.slice(0, 15);
+  const maxImpact = top.length > 0 ? top[0].avg_impact_on_mean : 1;
+
+  const colors = ['#3b82f6','#60a5fa','#93bbfc','#a78bfa','#c4b5fd','#22d3ee',
+                  '#67e8f9','#f59e0b','#fbbf24','#fcd34d','#22c55e','#4ade80',
+                  '#86efac','#ef4444','#f87171'];
+
+  let tornadoHtml = top.map((s, i) => {
+    const pct = (s.avg_impact_on_mean / maxImpact) * 100;
+    const label = `${s.variable}.${s.parameter}`;
+    return `<div class="tornado-bar-row">
+      <div class="tornado-label" title="${label}">${label.replace(/_/g, ' ')}</div>
+      <div class="tornado-bar-container">
+        <div class="tornado-bar" style="width:${pct}%;background:${colors[i % colors.length]}"></div>
+      </div>
+      <div class="tornado-value">${s.relative_importance >= 0.01 ? (s.relative_importance * 100).toFixed(1) + '%' : '<1%'}</div>
+    </div>`;
+  }).join('');
+
+  let html = `
+    <div class="results-header">
+      <h2>Sensitivity Analysis</h2>
+      <span class="results-meta">${data.elapsed}s &middot; ${data.sensitivities.length} parameters</span>
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Tornado Chart: ${esc(data.metric.replace(/_/g, ' '))}</div>
+      <div class="diag-subtitle">
+        Which input parameters drive the most variance in the output?
+        Baseline mean: <strong style="color:var(--accent2)">${fmt(data.base_mean, data.sensitivities[0]?.base_value > 1 ? 'dollar' : 'number')}</strong>
+      </div>
+      ${tornadoHtml}
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Detail Table</div>
+      <table class="conv-table">
+        <tr><th>#</th><th>Variable.Parameter</th><th>Base Value</th><th>Impact on Mean</th><th>Elasticity</th><th>Rel. Importance</th></tr>
+        ${data.sensitivities.map((s, i) => `<tr>
+          <td>${i+1}</td>
+          <td>${s.variable}.${s.parameter}</td>
+          <td>${typeof s.base_value === 'number' ? s.base_value.toLocaleString(undefined, {maximumFractionDigits: 4}) : s.base_value}</td>
+          <td>${s.avg_impact_on_mean.toLocaleString()}</td>
+          <td>${s.elasticity.toFixed(3)}</td>
+          <td>${(s.relative_importance * 100).toFixed(1)}%</td>
+        </tr>`).join('')}
+      </table>
+    </div>`;
+
+  main.innerHTML = html;
+}
+
+// ═══════════════════════════════════════════
+// DIAGNOSTICS: BASELINE COMPARISON
+// ═══════════════════════════════════════════
+async function runBaseline() {
+  if (!currentDomain) return showToast('Select a domain first', 'error');
+  showLoading('Running baseline comparison', 'Deterministic forecast vs Monte Carlo...');
+
+  try {
+    const res = await fetch('/api/baseline', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        domain: currentDomain,
+        n_simulations: parseInt(document.getElementById('n-sims').value)
+      })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    renderBaseline(data);
+    showToast('Baseline comparison complete', 'success');
+  } catch(e) {
+    showToast('Baseline error: ' + e.message, 'error');
+  } finally {
+    hideLoading();
+  }
+}
+
+function renderBaseline(data) {
+  const main = document.getElementById('main');
+
+  let compRows = '';
+  for (const [name, c] of Object.entries(data.comparison)) {
+    const f = c.format || 'number';
+    compRows += `
+      <div class="baseline-row">
+        <div style="color:var(--text)">${name.replace(/_/g, ' ')}</div>
+        <div>${fmt(c.deterministic, f)}</div>
+        <div>${fmt(c.mc_median, f)}</div>
+        <div>${fmt(c.mc_p10, f)} to ${fmt(c.mc_p90, f)}</div>
+        <div class="baseline-hidden-risk">${fmt(c.downside_hidden_by_deterministic, f)}</div>
+      </div>`;
+  }
+
+  let html = `
+    <div class="results-header">
+      <h2>Baseline Comparison</h2>
+      <span class="results-meta">${data.elapsed}s &middot; ${data.n_simulations.toLocaleString()} sims</span>
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Deterministic (Spreadsheet) vs Monte Carlo</div>
+      <div class="diag-subtitle">
+        The deterministic forecast uses the mode/mean of each distribution — the "most likely" value.
+        Monte Carlo reveals the <strong>range</strong> of outcomes that a single-point forecast hides.
+      </div>
+      <div class="baseline-row header">
+        <div>Metric</div>
+        <div>Spreadsheet</div>
+        <div>MC Median</div>
+        <div>80% Range (P10-P90)</div>
+        <div>Hidden Downside</div>
+      </div>
+      ${compRows}
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Verdict</div>
+      <div style="font-size:13px;color:var(--text);line-height:1.6">
+        ${esc(data.verdict)}. The "Hidden Downside" column shows how much worse things could be
+        compared to the spreadsheet forecast — risk that deterministic planning completely ignores.
+      </div>
+    </div>`;
+
+  main.innerHTML = html;
 }
 
 // ═══════════════════════════════════════════

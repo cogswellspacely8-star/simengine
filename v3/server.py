@@ -15,6 +15,10 @@ from kernel import (
     compute_fitness, evolve, percentile, SAMPLERS
 )
 from bayesian import update_config, update_parameter
+from diagnostics import (
+    convergence_analysis, sensitivity_analysis,
+    deterministic_baseline, compare_to_baseline
+)
 
 DOMAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "domains")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
@@ -475,6 +479,62 @@ class Handler(BaseHTTPRequestHandler):
                 html = generate_report_html(results, config_data)
                 self._html_response(html)
             except Exception as e:
+                self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/convergence":
+            try:
+                if body.get("config"):
+                    data = body["config"]
+                else:
+                    data = load_domain(body.get("domain"))
+                cfg = DomainConfig.from_dict(data)
+                metric = body.get("metric")
+                max_runs = body.get("max_runs", 10000)
+                t0 = time.time()
+                result = convergence_analysis(cfg, metric=metric, max_runs=max_runs)
+                result["elapsed"] = round(time.time() - t0, 2)
+                self._json_response(result)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/sensitivity":
+            try:
+                if body.get("config"):
+                    data = body["config"]
+                else:
+                    data = load_domain(body.get("domain"))
+                cfg = DomainConfig.from_dict(data)
+                metric = body.get("metric")
+                n_base = body.get("n_base", 1000)
+                n_perturb = body.get("n_perturb", 10)
+                t0 = time.time()
+                result = sensitivity_analysis(
+                    cfg, metric=metric, n_base=n_base, n_perturb=n_perturb
+                )
+                result["elapsed"] = round(time.time() - t0, 2)
+                self._json_response(result)
+            except Exception as e:
+                import traceback; traceback.print_exc()
+                self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/baseline":
+            try:
+                if body.get("config"):
+                    data = body["config"]
+                else:
+                    data = load_domain(body.get("domain"))
+                cfg = DomainConfig.from_dict(data)
+                n_sims = body.get("n_simulations", 5000)
+                t0 = time.time()
+                result = compare_to_baseline(cfg, n_simulations=n_sims)
+                result["elapsed"] = round(time.time() - t0, 2)
+                self._json_response(result)
+            except Exception as e:
+                import traceback; traceback.print_exc()
                 self._json_response({"error": str(e)}, 500)
             return
 

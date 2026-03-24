@@ -1,0 +1,177 @@
+{
+  "name": "E-Commerce Product Launch Viability",
+  "description": "Models a new online store launch over 12 months: traffic growth, conversion optimization, average order value, customer acquisition cost, and retention. Answers: Is this product launch viable, and when does it break even?",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Is this product launch viable, and how much should I invest in marketing?",
+    "key_levers": "Ad spend drives traffic, conversion rate and AOV drive revenue, churn determines repeat purchase rate.",
+    "what_good_looks_like": "Break-even within 8 months, positive LTV:CAC ratio > 3:1, and at least 70% chance of profitability by month 12."
+  },
+
+  "parameters": {
+    "monthly_visitors": {
+      "distribution": "lognormal",
+      "params": {"median": 5000, "spread": 0.5, "min": 500, "max": 50000},
+      "calibration": {
+        "source": "Shopify benchmarks: new stores 1k-10k visitors/month in year 1 with active marketing",
+        "updatable": true,
+        "update_method": "Lognormal update from Google Analytics monthly sessions"
+      }
+    },
+    "conversion_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.008, "mode": 0.022, "high": 0.05},
+      "calibration": {
+        "source": "Littledata: median Shopify conversion rate 1.4%; top quartile 3.2%. New stores skew lower.",
+        "updatable": true,
+        "update_method": "Beta-Binomial conjugate from sessions and orders"
+      }
+    },
+    "avg_order_value": {
+      "distribution": "lognormal",
+      "params": {"median": 65, "spread": 0.3, "min": 20, "max": 200},
+      "calibration": {
+        "source": "Shopify: average AOV across all stores ~$60-$85 depending on vertical"
+      }
+    },
+    "churn_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.70, "mode": 0.82, "high": 0.95},
+      "calibration": {
+        "source": "RJMetrics: only 18-32% of first-time e-commerce buyers make a second purchase within a year",
+        "updatable": true
+      }
+    },
+    "cac": {
+      "distribution": "lognormal",
+      "params": {"median": 35, "spread": 0.4, "min": 8, "max": 120},
+      "calibration": {
+        "source": "WordStream: average e-commerce CPA $35-$65 on Google Ads; Meta $15-$50"
+      }
+    }
+  },
+
+  "controls": {
+    "monthly_ad_spend": {
+      "distribution": "fixed",
+      "params": {"value": 5000},
+      "calibration": {"source": "Combined Google + Meta ad budget"}
+    },
+    "cogs_pct": {
+      "distribution": "fixed",
+      "params": {"value": 0.40},
+      "calibration": {"source": "Cost of goods as % of revenue; 35-50% typical for DTC products"}
+    },
+    "monthly_platform_costs": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Shopify plan + apps + email marketing tool"}
+    },
+    "monthly_fulfillment_per_order": {
+      "distribution": "fixed",
+      "params": {"value": 8},
+      "calibration": {"source": "Shipping + packaging per order; $5-$12 typical for small parcels"}
+    }
+  },
+
+  "exogenous": {
+    "traffic_growth_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.98, "mode": 1.06, "high": 1.15},
+      "calibration": {
+        "source": "Month-over-month organic traffic growth; >1 means SEO/content is compounding"
+      }
+    },
+    "seasonal_multiplier": {
+      "distribution": "uniform",
+      "params": {"low": 0.80, "high": 1.30},
+      "calibration": {
+        "source": "E-commerce seasonality: Q4 holiday bump +20-40%, summer lull -10-20%"
+      }
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "active_customers": 0,
+    "cumulative_orders": 0
+  },
+
+  "step_logic": [
+    {"target": "traffic_mult",     "expr": "traffic_growth_rate ** _step"},
+    {"target": "effective_visitors","expr": "round(monthly_visitors * traffic_mult * seasonal_multiplier)"},
+    {"target": "paid_customers",   "expr": "round(monthly_ad_spend / cac)"},
+    {"target": "organic_orders",   "expr": "binomial(effective_visitors, conversion_rate)"},
+    {"target": "repeat_orders",    "expr": "binomial(round(active_customers), 1 - churn_rate) if active_customers > 0 else 0"},
+    {"target": "total_orders",     "expr": "organic_orders + paid_customers + repeat_orders"},
+    {"target": "gross_revenue",    "expr": "total_orders * avg_order_value"},
+    {"target": "cogs",             "expr": "gross_revenue * cogs_pct"},
+    {"target": "fulfillment",      "expr": "total_orders * monthly_fulfillment_per_order"},
+    {"target": "total_cost",       "expr": "cogs + fulfillment + monthly_ad_spend + monthly_platform_costs"},
+    {"target": "net_income",       "expr": "gross_revenue - total_cost"},
+    {"target": "new_active",       "expr": "max(0, round(active_customers * (1 - churn_rate) + organic_orders + paid_customers))"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue": "cumulative_revenue + gross_revenue",
+    "cumulative_costs":   "cumulative_costs + total_cost",
+    "active_customers":   "new_active",
+    "cumulative_orders":  "cumulative_orders + total_orders"
+  },
+
+  "metrics": {
+    "total_revenue":      {"expr": "cumulative_revenue",                        "format": "dollar"},
+    "total_profit":       {"expr": "cumulative_revenue - cumulative_costs",     "format": "dollar"},
+    "total_orders":       {"expr": "cumulative_orders",                         "format": "number"},
+    "avg_order_val":      {"expr": "cumulative_revenue / cumulative_orders if cumulative_orders > 0 else 0", "format": "dollar"},
+    "ending_customers":   {"expr": "active_customers",                          "format": "number"},
+    "ltv_cac_ratio":      {"expr": "(cumulative_revenue / cumulative_orders / churn_rate) / cac if cumulative_orders > 0 and churn_rate > 0 else 0", "format": "number"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_profit",
+        "condition": "below",
+        "threshold": -20000,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of losing over $20k in the first year"
+      },
+      {
+        "metric": "total_revenue",
+        "condition": "below",
+        "threshold": 30000,
+        "max_prob": 0.20,
+        "rationale": "At least 80% chance of generating $30k+ in revenue"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "total_profit",
+        "alpha": 0.10,
+        "min_cvar": -40000,
+        "rationale": "In the worst 10% of scenarios, total loss must not exceed $40k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, total_profit_median / 500)",                 "weight": 0.30, "name": "profitability"},
+      {"expr": "min(100, total_revenue_median / 1500)",               "weight": 0.25, "name": "revenue_scale"},
+      {"expr": "min(100, ltv_cac_ratio_median * 20)",                 "weight": 0.25, "name": "unit_economics"},
+      {"expr": "min(100, ending_customers_median / 5)",               "weight": 0.20, "name": "customer_base"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.monthly_ad_spend.params.value",    "range": [1000, 15000]},
+    {"path": "controls.cogs_pct.params.value",            "range": [0.25, 0.60]},
+    {"path": "parameters.conversion_rate.params.mode",    "range": [0.01, 0.06]}
+  ]
+}

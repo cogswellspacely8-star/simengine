@@ -1,0 +1,187 @@
+{
+  "name": "Manufacturing Supply Chain — Safety Stock Optimization",
+  "description": "Models a manufacturing supply chain over 12 months: stochastic demand, variable lead times, defect rates, and raw material cost fluctuations. Answers: How much safety stock should I hold to balance service levels against carrying costs?",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "How much safety stock should I hold to balance service levels against carrying costs?",
+    "key_levers": "Safety stock level, reorder point, and supplier selection (affecting lead time and defect rate) are the primary decisions.",
+    "what_good_looks_like": "Service level above 95%, carrying costs below 15% of COGS, and fewer than 2 stockout months per year."
+  },
+
+  "parameters": {
+    "demand_units": {
+      "distribution": "normal",
+      "params": {"mean": 1200, "std": 300, "min": 200, "max": 3000},
+      "calibration": {
+        "source": "Historical shipment data: average 1200 units/month with ~25% CV. Typical for mid-volume discrete manufacturing.",
+        "updatable": true,
+        "update_method": "Normal-Normal conjugate from monthly shipment records"
+      }
+    },
+    "lead_time_days": {
+      "distribution": "lognormal",
+      "params": {"median": 21, "spread": 0.35, "min": 7, "max": 60},
+      "calibration": {
+        "source": "ISM Report on Business: average manufacturing lead time 14-30 days; overseas sourcing 30-60 days",
+        "updatable": true
+      }
+    },
+    "defect_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.005, "mode": 0.02, "high": 0.08},
+      "calibration": {
+        "source": "ASQ benchmarks: incoming inspection defect rates 1-5% for commodity parts; <1% for certified suppliers",
+        "updatable": true,
+        "update_method": "Beta-Binomial conjugate from inspection data"
+      }
+    },
+    "raw_material_cost": {
+      "distribution": "lognormal",
+      "params": {"median": 22, "spread": 0.25, "min": 12, "max": 45},
+      "calibration": {
+        "source": "BLS PPI for intermediate materials; per-unit cost varies by commodity. $22 baseline per unit."
+      }
+    }
+  },
+
+  "controls": {
+    "safety_stock_units": {
+      "distribution": "fixed",
+      "params": {"value": 500},
+      "calibration": {"source": "Buffer inventory held to absorb demand/supply variability"}
+    },
+    "reorder_point": {
+      "distribution": "fixed",
+      "params": {"value": 900},
+      "calibration": {"source": "Trigger level for placing new purchase order; demand during lead time + safety stock"}
+    },
+    "order_quantity": {
+      "distribution": "fixed",
+      "params": {"value": 1500},
+      "calibration": {"source": "Economic order quantity balancing setup cost vs. holding cost"}
+    },
+    "selling_price_per_unit": {
+      "distribution": "fixed",
+      "params": {"value": 55},
+      "calibration": {"source": "Wholesale/contract price per finished unit"}
+    },
+    "holding_cost_pct_per_month": {
+      "distribution": "fixed",
+      "params": {"value": 0.02},
+      "calibration": {"source": "Monthly carrying cost as % of unit value; includes warehousing, insurance, obsolescence. ~20-25% annually."}
+    },
+    "stockout_penalty_per_unit": {
+      "distribution": "fixed",
+      "params": {"value": 15},
+      "calibration": {"source": "Lost margin + expediting cost + goodwill damage per unfulfilled unit"}
+    }
+  },
+
+  "exogenous": {
+    "demand_shock": {
+      "distribution": "uniform",
+      "params": {"low": 0.85, "high": 1.20},
+      "calibration": {
+        "source": "Monthly demand multiplier capturing macro shifts, promotions, or competitor stockouts"
+      }
+    },
+    "supply_disruption": {
+      "distribution": "bernoulli",
+      "params": {"p": 0.05},
+      "calibration": {
+        "source": "Resilinc: ~5% monthly probability of a significant supplier disruption event"
+      }
+    }
+  },
+
+  "initial_state": {
+    "inventory_on_hand": 1500,
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "cumulative_stockout_units": 0,
+    "stockout_months": 0,
+    "cumulative_holding_cost": 0
+  },
+
+  "step_logic": [
+    {"target": "actual_demand",       "expr": "max(0, round(demand_units * demand_shock))"},
+    {"target": "usable_inventory",    "expr": "max(0, round(inventory_on_hand * (1 - defect_rate)))"},
+    {"target": "units_sold",          "expr": "min(usable_inventory, actual_demand)"},
+    {"target": "stockout_units",      "expr": "max(0, actual_demand - usable_inventory)"},
+    {"target": "is_stockout",         "expr": "1 if stockout_units > 0 else 0"},
+    {"target": "revenue",             "expr": "units_sold * selling_price_per_unit"},
+    {"target": "material_cost",       "expr": "units_sold * raw_material_cost"},
+    {"target": "holding_cost",        "expr": "max(0, inventory_on_hand - units_sold) * raw_material_cost * holding_cost_pct_per_month"},
+    {"target": "stockout_cost",       "expr": "stockout_units * stockout_penalty_per_unit"},
+    {"target": "disruption_delay",    "expr": "lead_time_days * 1.5 if supply_disruption > 0 else lead_time_days"},
+    {"target": "replenish",           "expr": "order_quantity if (inventory_on_hand - units_sold) < reorder_point else 0"},
+    {"target": "received_units",      "expr": "replenish if disruption_delay <= 30 else round(replenish * 0.5)"},
+    {"target": "new_inventory",       "expr": "max(0, inventory_on_hand - units_sold + received_units)"},
+    {"target": "total_cost",          "expr": "material_cost + holding_cost + stockout_cost"}
+  ],
+
+  "accumulators": {
+    "inventory_on_hand":          "new_inventory",
+    "cumulative_revenue":         "cumulative_revenue + revenue",
+    "cumulative_costs":           "cumulative_costs + total_cost",
+    "cumulative_stockout_units":  "cumulative_stockout_units + stockout_units",
+    "stockout_months":            "stockout_months + is_stockout",
+    "cumulative_holding_cost":    "cumulative_holding_cost + holding_cost"
+  },
+
+  "metrics": {
+    "total_revenue":        {"expr": "cumulative_revenue",                             "format": "dollar"},
+    "total_profit":         {"expr": "cumulative_revenue - cumulative_costs",          "format": "dollar"},
+    "total_stockout_units": {"expr": "cumulative_stockout_units",                      "format": "number"},
+    "stockout_months":      {"expr": "stockout_months",                                "format": "number"},
+    "service_level":        {"expr": "1 - (stockout_months / 12)",                     "format": "percent"},
+    "total_holding_cost":   {"expr": "cumulative_holding_cost",                        "format": "dollar"},
+    "ending_inventory":     {"expr": "inventory_on_hand",                              "format": "number"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "service_level",
+        "condition": "below",
+        "threshold": 0.90,
+        "max_prob": 0.15,
+        "rationale": "No more than 15% chance of service level dropping below 90%"
+      },
+      {
+        "metric": "total_profit",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.10,
+        "rationale": "No more than 10% chance of a net loss for the year"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "total_profit",
+        "alpha": 0.10,
+        "min_cvar": -50000,
+        "rationale": "In the worst 10% of scenarios, annual loss must not exceed $50k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, service_level_median * 100)",                "weight": 0.30, "name": "service_level"},
+      {"expr": "min(100, total_profit_median / 2000)",                "weight": 0.30, "name": "profitability"},
+      {"expr": "max(0, 100 - stockout_months_median * 15)",           "weight": 0.20, "name": "reliability"},
+      {"expr": "max(0, 100 - total_holding_cost_median / 200)",       "weight": 0.20, "name": "efficiency"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.safety_stock_units.params.value",    "range": [100, 1500]},
+    {"path": "controls.reorder_point.params.value",         "range": [400, 2000]},
+    {"path": "controls.order_quantity.params.value",         "range": [500, 3000]}
+  ]
+}

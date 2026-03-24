@@ -1,0 +1,173 @@
+{
+  "name": "Small Healthcare Clinic — Provider Hiring Decision",
+  "description": "Models a small medical/dental clinic over 12 months: patient volume, insurance reimbursements, procedure revenue, and supply costs. Answers: Should I hire another provider, and can the patient volume support the added overhead?",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "context": {
+    "decision": "Should I hire another provider to expand capacity?",
+    "key_levers": "Patient volume, insurance reimbursement rates, and provider salary are the main drivers. Marketing spend can influence new patient acquisition.",
+    "what_good_looks_like": "Revenue covers the new provider's salary within 6 months, and net income stays positive in at least 85% of scenarios."
+  },
+
+  "parameters": {
+    "patients_per_day": {
+      "distribution": "normal",
+      "params": {"mean": 18, "std": 4, "min": 5, "max": 35},
+      "calibration": {
+        "source": "MGMA benchmarks: primary care sees 15-25 patients/day; dental 10-20. Mode of 18 for a small practice.",
+        "updatable": true,
+        "update_method": "Normal-Normal conjugate from daily patient counts"
+      }
+    },
+    "insurance_reimbursement_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.55, "mode": 0.72, "high": 0.90},
+      "calibration": {
+        "source": "AMA Physician Practice Benchmark: average collection rate 65-80% of billed charges depending on payer mix",
+        "updatable": true
+      }
+    },
+    "avg_procedure_value": {
+      "distribution": "lognormal",
+      "params": {"median": 180, "spread": 0.35, "min": 80, "max": 500},
+      "calibration": {
+        "source": "CMS physician fee schedule: office visit $100-$250, dental cleaning $75-$200, minor procedure $200-$500"
+      }
+    },
+    "supply_costs_per_patient": {
+      "distribution": "triangular",
+      "params": {"low": 15, "mode": 28, "high": 50},
+      "calibration": {
+        "source": "Medical Economics survey: per-visit supply costs $20-$40 for primary care, higher for dental/specialty"
+      }
+    }
+  },
+
+  "controls": {
+    "num_providers": {
+      "distribution": "fixed",
+      "params": {"value": 2},
+      "calibration": {"source": "Current provider count (considering hiring one more, making it 2 total from 1)"}
+    },
+    "provider_monthly_salary": {
+      "distribution": "fixed",
+      "params": {"value": 12000},
+      "calibration": {"source": "BLS: NP/PA $100-$130k/yr; dentist associate $120-$180k/yr. Using $144k/yr."}
+    },
+    "monthly_rent": {
+      "distribution": "fixed",
+      "params": {"value": 5500},
+      "calibration": {"source": "Medical office lease: $25-$35/sqft/yr for 2000 sqft"}
+    },
+    "monthly_admin_staff_cost": {
+      "distribution": "fixed",
+      "params": {"value": 8000},
+      "calibration": {"source": "2 front-desk + 1 biller at $3k-$4k/month each"}
+    },
+    "monthly_marketing": {
+      "distribution": "fixed",
+      "params": {"value": 1500},
+      "calibration": {"source": "Google Ads + local SEO for patient acquisition"}
+    },
+    "working_days_per_month": {
+      "distribution": "fixed",
+      "params": {"value": 22},
+      "calibration": {"source": "Standard working days minus holidays"}
+    }
+  },
+
+  "exogenous": {
+    "seasonal_demand_factor": {
+      "distribution": "triangular",
+      "params": {"low": 0.80, "mode": 1.0, "high": 1.20},
+      "calibration": {
+        "source": "Seasonal variation: flu season peaks, summer lulls. +/-20% swing typical for primary care."
+      }
+    },
+    "no_show_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.08, "mode": 0.15, "high": 0.25},
+      "calibration": {
+        "source": "MGMA: average no-show rate 12-18% for outpatient clinics",
+        "updatable": true
+      }
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue": 0,
+    "cumulative_costs": 0,
+    "cumulative_patients": 0
+  },
+
+  "step_logic": [
+    {"target": "scheduled_patients",   "expr": "round(patients_per_day * seasonal_demand_factor * working_days_per_month * num_providers)"},
+    {"target": "actual_patients",      "expr": "max(0, round(scheduled_patients * (1 - no_show_rate)))"},
+    {"target": "gross_billings",       "expr": "actual_patients * avg_procedure_value"},
+    {"target": "collected_revenue",    "expr": "gross_billings * insurance_reimbursement_rate"},
+    {"target": "supply_expense",       "expr": "actual_patients * supply_costs_per_patient"},
+    {"target": "provider_cost",        "expr": "num_providers * provider_monthly_salary"},
+    {"target": "total_monthly_cost",   "expr": "provider_cost + monthly_rent + monthly_admin_staff_cost + monthly_marketing + supply_expense"},
+    {"target": "net_income",           "expr": "collected_revenue - total_monthly_cost"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue": "cumulative_revenue + collected_revenue",
+    "cumulative_costs":   "cumulative_costs + total_monthly_cost",
+    "cumulative_patients":"cumulative_patients + actual_patients"
+  },
+
+  "metrics": {
+    "total_revenue":       {"expr": "cumulative_revenue",                        "format": "dollar"},
+    "total_costs":         {"expr": "cumulative_costs",                          "format": "dollar"},
+    "total_profit":        {"expr": "cumulative_revenue - cumulative_costs",     "format": "dollar"},
+    "avg_monthly_profit":  {"expr": "(cumulative_revenue - cumulative_costs) / 12", "format": "dollar"},
+    "total_patients_seen": {"expr": "cumulative_patients",                       "format": "number"},
+    "revenue_per_patient": {"expr": "cumulative_revenue / cumulative_patients if cumulative_patients > 0 else 0", "format": "dollar"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "total_profit",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.15,
+        "rationale": "No more than 15% chance of a net loss over the year after hiring"
+      },
+      {
+        "metric": "avg_monthly_profit",
+        "condition": "below",
+        "threshold": -5000,
+        "max_prob": 0.05,
+        "rationale": "No more than 5% chance of averaging >$5k/month in losses"
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "total_profit",
+        "alpha": 0.10,
+        "min_cvar": -60000,
+        "rationale": "In the worst 10% of scenarios, annual loss must not exceed $60k"
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, total_profit_median / 1000)",                "weight": 0.35, "name": "profitability"},
+      {"expr": "min(100, total_revenue_median / 5000)",               "weight": 0.25, "name": "revenue_scale"},
+      {"expr": "max(0, 100 + avg_monthly_profit_p10 / 100)",          "weight": 0.25, "name": "downside_safety"},
+      {"expr": "min(100, total_patients_seen_median / 50)",            "weight": 0.15, "name": "patient_volume"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "controls.num_providers.params.value",           "range": [1, 3]},
+    {"path": "controls.provider_monthly_salary.params.value", "range": [8000, 18000]},
+    {"path": "controls.monthly_marketing.params.value",       "range": [500, 5000]}
+  ]
+}

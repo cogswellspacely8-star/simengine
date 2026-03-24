@@ -212,14 +212,14 @@ def sensitivity_analysis(config: DomainConfig,
                 # Perturb up
                 perturbed_up = copy.deepcopy(config)
                 perturbed_up.n_simulations = n_base
-                perturbed_up.variables[var_name]["params"][param_name] = param_val + delta
-                
+                perturbed_up.all_variables[var_name]["params"][param_name] = param_val + delta
+
                 r_up = run_monte_carlo(perturbed_up, seed=seed + trial * 2)
-                
+
                 # Perturb down
                 perturbed_dn = copy.deepcopy(config)
                 perturbed_dn.n_simulations = n_base
-                perturbed_dn.variables[var_name]["params"][param_name] = param_val - delta
+                perturbed_dn.all_variables[var_name]["params"][param_name] = param_val - delta
                 
                 r_dn = run_monte_carlo(perturbed_dn, seed=seed + trial * 2 + 1)
                 
