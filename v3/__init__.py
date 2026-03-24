@@ -1,4 +1,4 @@
-"""SimEngine v2 — Universal Simulation Kernel + Diagnostics."""
+"""SimEngine v3 — Universal Simulation Kernel + Diagnostics."""
 from .kernel import DomainConfig, run_monte_carlo, evolve, compute_fitness
 from .diagnostics import (
     convergence_analysis, sensitivity_analysis, 
@@ -12,4 +12,4 @@ __all__ = [
     "deterministic_baseline", "compare_to_baseline",
     "ga_hyperparameter_report", "safe_eval_expr",
 ]
-__version__ = "2.1.0"
+__version__ = "3.0.0"

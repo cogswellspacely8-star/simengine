@@ -12,7 +12,7 @@ No external dependencies beyond the MCP SDK (pip install mcp).
 #   "mcpServers": {
 #     "simengine": {
 #       "command": "python3",
-#       "args": ["/home/tony/projects/simengine/v3/mcp_server.py"]
+#       "args": ["<path-to-simengine>/v3/mcp_server.py"]
 #     }
 #   }
 # }

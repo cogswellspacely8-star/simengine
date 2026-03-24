@@ -7,3 +7,6 @@ evolution_results.json
 *.swp
 *.swo
 *~
+.bridge/
+.env
+.pytest_cache/

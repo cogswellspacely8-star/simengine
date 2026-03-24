@@ -1,8 +1,9 @@
 {
+  "_note": "Update the path below to the absolute path of mcp_server.py on your system",
   "mcpServers": {
     "simengine": {
       "command": "python3",
-      "args": ["/home/tony/projects/simengine/v3/mcp_server.py"]
+      "args": ["<path-to-simengine>/v3/mcp_server.py"]
     }
   }
 }

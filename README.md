@@ -724,8 +724,14 @@ Safety constraints translate directly to decision language:
 
 ---
 
+## Documentation
+
+Peer review reports and the system design paper are available on request. Contact the maintainer for access.
+
 ## License
 
-Copyright Venture Horizon LLC. All rights reserved.
+Copyright (c) 2026 Venture Horizon LLC. All rights reserved.
 
-License terms pending. Contact the maintainer for usage inquiries.
+This software is proprietary. See [LICENSE](LICENSE) for full terms. No part of this software may be reproduced, distributed, or used without prior written consent of Venture Horizon LLC.
+
+For licensing inquiries, contact: https://venturehorizon.llc

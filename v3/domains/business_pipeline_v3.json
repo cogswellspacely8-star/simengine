@@ -1,6 +1,7 @@
 {
-  "name": "Venture Horizon Pipeline v3 (Calibrated)",
+  "name": "Web Consultancy Pipeline (Calibrated)",
   "description": "Web design consultancy — 12-month revenue simulation with restructured schema, safety constraints, and calibration sources",
+  "_disclaimer": "This domain config uses illustrative but realistic numbers for a hypothetical web design consultancy. Values are provided as a demonstration of SimEngine capabilities, not as financial advice.",
   "n_simulations": 5000,
   "n_steps": 12,
   "step_label": "month",
@@ -39,7 +40,7 @@
     "monthly_living_costs": {
       "distribution": "fixed",
       "params": {"value": 3500},
-      "calibration": {"source": "Operator actual: Delaware CoL estimate", "updatable": false}
+      "calibration": {"source": "Operator actual: U.S. metro-area cost-of-living estimate", "updatable": false}
     },
     "available_hours": {
       "distribution": "fixed",

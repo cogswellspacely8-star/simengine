@@ -48,7 +48,7 @@ print("\n2. Domain config loading")
 def t_load():
     from kernel import DomainConfig
     cfg = DomainConfig.from_json("domains/business_pipeline_v3.json")
-    assert cfg.name == "Venture Horizon Pipeline v3 (Calibrated)"
+    assert cfg.name == "Web Consultancy Pipeline (Calibrated)"
     assert len(cfg.parameters) > 0
     assert len(cfg.controls) > 0
     assert len(cfg.exogenous) > 0
