@@ -780,6 +780,65 @@ canvas { width: 100%; display: block; }
 }
 .action-btn:hover { border-color: var(--border2); color: var(--text); }
 
+/* ── Scenario comparison dashboard ── */
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  margin-bottom: 16px;
+}
+
+.compare-table th {
+  text-align: left;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+
+.compare-table th.scenario-col {
+  text-align: center;
+  min-width: 120px;
+}
+
+.compare-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(37,45,64,0.4);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.compare-table td.metric-name {
+  font-family: var(--font);
+  font-weight: 600;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.compare-table td.scenario-val {
+  text-align: center;
+}
+
+.compare-table .best-val { color: var(--green); font-weight: 700; }
+.compare-table .worst-val { color: var(--red); }
+
+.compare-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+}
+
+.compare-chip .chip-color {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
 /* ── Diagnostics panels ── */
 .diag-section {
   background: var(--surface);
@@ -1052,7 +1111,9 @@ canvas { width: 100%; display: block; }
       <button class="btn btn-run" id="btn-run" onclick="runSimulation()">Run Simulation</button>
       <button class="btn btn-evolve" id="btn-evolve" onclick="runEvolution()">Optimize (Evolutionary)</button>
       <button class="btn btn-compare" id="btn-compare" onclick="saveScenario()">Save Scenario</button>
+      <button class="btn btn-compare" id="btn-compare-all" onclick="compareScenarios()" style="display:none">Compare All Scenarios</button>
       <button class="btn btn-compare" id="btn-export" onclick="exportReport()" style="display:none">Export Report</button>
+      <button class="btn btn-compare" id="btn-share" onclick="shareConfig()" style="display:none">Share Config URL</button>
       <button class="btn btn-compare" id="btn-update" onclick="openBayesianUpdate()" style="display:none">Update from Data</button>
       <div class="section-title" style="margin-top:16px">Diagnostics</div>
       <div class="diag-btn-row">
@@ -1127,6 +1188,7 @@ async function selectDomain(file) {
   // Show update button if domain has updatable params
   const hasUpdatable = Object.values(currentConfig.parameters || {}).some(v => v.calibration?.updatable);
   document.getElementById('btn-update').style.display = hasUpdatable ? '' : 'none';
+  document.getElementById('btn-share').style.display = '';
 
   // Show context if available
   const ctx = currentConfig.context;
@@ -1951,6 +2013,9 @@ function saveScenario() {
   // Also set as pinned for delta comparison
   pinnedResults = scenarios[scenarios.length - 1].results;
   if (currentResults) renderResults(currentResults);
+  // Show compare button when 2+ scenarios
+  const cmpBtn = document.getElementById('btn-compare-all');
+  if (cmpBtn) cmpBtn.style.display = scenarios.length >= 2 ? '' : 'none';
 }
 
 function removeScenario(idx) {
@@ -1961,6 +2026,8 @@ function removeScenario(idx) {
     pinnedResults = null;
   }
   if (currentResults) renderResults(currentResults);
+  const cmpBtn = document.getElementById('btn-compare-all');
+  if (cmpBtn) cmpBtn.style.display = scenarios.length >= 2 ? '' : 'none';
 }
 
 function viewScenario(idx) {
@@ -2441,7 +2508,31 @@ function openBayesianUpdate() {
     <div class="modal">
       <h2>Update from Observed Data</h2>
       <div class="modal-sub">Enter real-world observations to sharpen the simulation parameters using Bayesian updating. Leave fields blank to skip.</div>
-      ${formRows}
+
+      <div class="modal-tabs" style="margin-bottom:16px">
+        <div class="modal-tab active" onclick="switchBayesMode('manual',this)">Manual Entry</div>
+        <div class="modal-tab" onclick="switchBayesMode('upload',this)">Upload CSV/JSON</div>
+      </div>
+
+      <div id="bayes-manual">
+        ${formRows}
+      </div>
+
+      <div id="bayes-upload" style="display:none">
+        <div class="form-group">
+          <label class="form-label">Upload observation data</label>
+          <input type="file" id="bayes-file" accept=".csv,.json,.tsv" style="font-size:12px;color:var(--text2)" onchange="parseBayesFile(this)">
+          <div class="form-hint">
+            CSV format: header row with variable names, values in rows. Example:<br>
+            <code style="font-size:10px;color:var(--text3)">close_rate,leads_per_month,project_value<br>0.28,4,3200<br>0.32,3,4100</code>
+          </div>
+          <div class="form-hint" style="margin-top:6px">
+            JSON format: <code style="font-size:10px;color:var(--text3)">{"close_rate": [0.28, 0.32], "leads_per_month": [4, 3]}</code>
+          </div>
+        </div>
+        <div id="bayes-upload-preview"></div>
+      </div>
+
       <div id="bayes-report"></div>
       <div class="modal-actions">
         <button class="btn btn-compare" onclick="closeBayesian()">Cancel</button>
@@ -2458,7 +2549,83 @@ function closeBayesian() {
   if (el) el.remove();
 }
 
+function switchBayesMode(mode, tab) {
+  document.querySelectorAll('#bayes-overlay .modal-tabs .modal-tab').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  document.getElementById('bayes-manual').style.display = mode === 'manual' ? '' : 'none';
+  document.getElementById('bayes-upload').style.display = mode === 'upload' ? '' : 'none';
+}
+
+let _uploadedObservations = null;
+
+function parseBayesFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const text = e.target.result.trim();
+    const preview = document.getElementById('bayes-upload-preview');
+    try {
+      let obs;
+      if (file.name.endsWith('.json')) {
+        obs = JSON.parse(text);
+      } else {
+        // CSV/TSV parsing
+        const sep = text.includes('\t') ? '\t' : ',';
+        const lines = text.split('\n').map(l => l.trim()).filter(l => l);
+        const headers = lines[0].split(sep).map(h => h.trim().replace(/^"|"$/g, ''));
+        obs = {};
+        headers.forEach(h => obs[h] = []);
+        for (let i = 1; i < lines.length; i++) {
+          const vals = lines[i].split(sep);
+          headers.forEach((h, j) => {
+            const v = parseFloat(vals[j]);
+            if (!isNaN(v)) obs[h].push(v);
+          });
+        }
+        // Remove empty columns
+        for (const k of Object.keys(obs)) {
+          if (obs[k].length === 0) delete obs[k];
+        }
+      }
+
+      _uploadedObservations = obs;
+      const varNames = Object.keys(obs);
+      let html = '<div style="margin-top:12px">';
+      html += `<div style="font-size:11px;color:var(--green);margin-bottom:8px">Parsed ${varNames.length} variables from ${file.name}</div>`;
+      varNames.forEach(name => {
+        const vals = obs[name];
+        html += `<div class="var-card" style="padding:8px 12px;margin-bottom:4px">
+          <div style="display:flex;justify-content:space-between;align-items:center">
+            <span style="font-weight:600;font-size:12px">${name.replace(/_/g, ' ')}</span>
+            <span style="font-size:10px;color:var(--text3);font-family:var(--mono)">${vals.length} values</span>
+          </div>
+          <div style="font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px">
+            [${vals.slice(0, 8).map(v => typeof v === 'number' ? v.toFixed(2) : v).join(', ')}${vals.length > 8 ? ', ...' : ''}]
+          </div>
+        </div>`;
+      });
+      html += '</div>';
+      preview.innerHTML = html;
+
+      // Also fill in the manual fields
+      varNames.forEach(name => {
+        const el = document.getElementById('obs-' + name);
+        if (el) el.value = obs[name].join(', ');
+      });
+    } catch(err) {
+      preview.innerHTML = `<div class="validation-errors">Parse error: ${esc(err.message)}</div>`;
+      _uploadedObservations = null;
+    }
+  };
+  reader.readAsText(file);
+}
+
 function collectObservations() {
+  // Prefer uploaded data if available
+  if (_uploadedObservations && Object.keys(_uploadedObservations).length > 0) {
+    return _uploadedObservations;
+  }
   const obs = {};
   document.querySelectorAll('[id^="obs-"]').forEach(el => {
     const name = el.id.replace('obs-', '');
@@ -2555,6 +2722,210 @@ async function applyBayesian() {
     btn.textContent = 'Run Simulation';
     window._bayesianUpdated = null;
   }
+}
+
+// ═══════════════════════════════════════════
+// MULTI-SCENARIO COMPARISON DASHBOARD
+// ═══════════════════════════════════════════
+function compareScenarios() {
+  const all = [];
+  if (currentResults) all.push({ name: 'Current Run', results: currentResults, color: 'var(--accent)' });
+  scenarios.forEach(s => all.push(s));
+  if (all.length < 2) return showToast('Save at least 2 scenarios to compare', 'info');
+
+  const metricNames = Object.keys(all[0].results.stats);
+  const main = document.getElementById('main');
+
+  // Build comparison table
+  let tableHtml = '<table class="compare-table"><thead><tr><th>Metric</th><th>Stat</th>';
+  all.forEach(s => {
+    tableHtml += `<th class="scenario-col"><div class="compare-chip"><span class="chip-color" style="background:${s.color}"></span>${esc(s.name)}</div></th>`;
+  });
+  tableHtml += '</tr></thead><tbody>';
+
+  for (const mname of metricNames) {
+    const f = all[0].results.stats[mname]?.format || 'number';
+    for (const stat of ['median', 'mean', 'p10', 'p90']) {
+      const vals = all.map(s => s.results.stats[mname]?.[stat] ?? 0);
+      const best = Math.max(...vals);
+      const worst = Math.min(...vals);
+      const isLowerBetter = mname.includes('cost') || mname.includes('overrun') || mname.includes('drawdown') || mname.includes('churn');
+
+      tableHtml += `<tr>
+        <td class="metric-name">${stat === 'median' ? mname.replace(/_/g, ' ') : ''}</td>
+        <td style="color:var(--text3);font-size:10px;text-transform:uppercase">${stat}</td>`;
+      vals.forEach(v => {
+        let cls = '';
+        if (vals.filter(x => x !== v).length > 0) {
+          if (isLowerBetter) {
+            if (v === worst) cls = 'best-val';
+            else if (v === best) cls = 'worst-val';
+          } else {
+            if (v === best) cls = 'best-val';
+            else if (v === worst) cls = 'worst-val';
+          }
+        }
+        tableHtml += `<td class="scenario-val ${cls}">${fmt(v, f)}</td>`;
+      });
+      tableHtml += '</tr>';
+    }
+  }
+  tableHtml += '</tbody></table>';
+
+  // Safety comparison
+  let safetyHtml = '';
+  const hasSafety = all.some(s => s.results.safety?.chance?.length || s.results.safety?.cvar?.length);
+  if (hasSafety) {
+    safetyHtml = '<div class="diag-section"><div class="diag-title">Safety Comparison</div>';
+    safetyHtml += '<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">';
+    all.forEach(s => {
+      const safety = s.results.safety || {};
+      const total = (safety.chance?.length || 0) + (safety.cvar?.length || 0);
+      const passed = (safety.chance?.filter(c=>c.passed).length || 0) + (safety.cvar?.filter(c=>c.passed).length || 0);
+      const pct = total > 0 ? Math.round(passed/total*100) : 100;
+      const color = pct >= 100 ? 'var(--green)' : pct >= 50 ? 'var(--amber)' : 'var(--red)';
+      safetyHtml += `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:14px">
+        <div class="compare-chip" style="margin-bottom:8px"><span class="chip-color" style="background:${s.color}"></span><strong>${esc(s.name)}</strong></div>
+        <div style="font-size:24px;font-weight:700;color:${color};font-family:var(--mono)">${pct}%</div>
+        <div style="font-size:10px;color:var(--text3)">${passed}/${total} constraints pass</div>
+        ${s.results.fitness != null ? `<div style="font-size:10px;color:var(--text3);margin-top:4px">Fitness: ${s.results.fitness.toFixed(1)}</div>` : ''}
+      </div>`;
+    });
+    safetyHtml += '</div></div>';
+  }
+
+  let html = `
+    <div class="results-header">
+      <h2>Scenario Comparison</h2>
+      <span class="results-meta">${all.length} scenarios</span>
+    </div>
+    <div class="diag-section">
+      <div class="diag-title">Metrics Side by Side</div>
+      <div class="diag-subtitle">Green = best value, Red = worst. For cost/risk metrics, lower is better.</div>
+      ${tableHtml}
+    </div>
+    ${safetyHtml}
+    <div class="diag-section">
+      <div class="diag-title">Overlaid Distributions</div>
+      <canvas id="compare-canvas" height="280"></canvas>
+    </div>`;
+
+  main.innerHTML = html;
+  requestAnimationFrame(() => drawCompareHistograms(all, metricNames[0]));
+}
+
+function drawCompareHistograms(allScenarios, metric) {
+  const canvas = document.getElementById('compare-canvas');
+  if (!canvas) return;
+
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = 280 * dpr;
+  canvas.style.height = '280px';
+  ctx.scale(dpr, dpr);
+  const W = rect.width, H = 280;
+
+  const pad = { top: 24, right: 20, bottom: 40, left: 65 };
+  const cw = W - pad.left - pad.right;
+  const ch = H - pad.top - pad.bottom;
+
+  ctx.fillStyle = '#0f1219';
+  ctx.fillRect(0, 0, W, H);
+
+  // Collect all values to determine shared range
+  let globalMin = Infinity, globalMax = -Infinity;
+  allScenarios.forEach(s => {
+    const h = s.results.histograms?.[metric];
+    if (h) { globalMin = Math.min(globalMin, h.lo); globalMax = Math.max(globalMax, h.hi); }
+  });
+  if (!isFinite(globalMin)) return;
+
+  const n_bins = 40;
+  const binWidth = (globalMax - globalMin) / n_bins;
+
+  // Rebin all scenarios onto shared grid
+  const scenarioBins = allScenarios.map(s => {
+    const h = s.results.histograms?.[metric];
+    if (!h) return new Array(n_bins).fill(0);
+    const bins = new Array(n_bins).fill(0);
+    const total = h.counts.reduce((a,b) => a+b, 0);
+    for (let i = 0; i < h.bins.length; i++) {
+      const binCenter = h.bins[i] + (h.bin_width || 0) / 2;
+      const idx = Math.min(n_bins - 1, Math.max(0, Math.floor((binCenter - globalMin) / binWidth)));
+      bins[idx] += h.counts[i] / total;  // normalize
+    }
+    return bins;
+  });
+
+  const maxDensity = Math.max(...scenarioBins.flat());
+  const barW = cw / n_bins;
+
+  const colors = allScenarios.map(s => {
+    const c = s.color || 'var(--accent)';
+    // Parse CSS var colors
+    if (c.startsWith('#')) return c;
+    if (c.includes('accent')) return '#3b82f6';
+    if (c.includes('amber') || c === '#f59e0b') return '#f59e0b';
+    if (c.includes('green') || c === '#22c55e') return '#22c55e';
+    if (c.includes('purple') || c === '#a78bfa') return '#a78bfa';
+    if (c.includes('red') || c === '#ef4444') return '#ef4444';
+    if (c.includes('cyan') || c === '#22d3ee') return '#22d3ee';
+    return c;
+  });
+
+  // Draw overlaid bars with transparency
+  scenarioBins.forEach((bins, si) => {
+    const color = colors[si];
+    for (let i = 0; i < n_bins; i++) {
+      const barH = (bins[i] / maxDensity) * ch;
+      const x = pad.left + i * barW;
+      const y = pad.top + ch - barH;
+      ctx.fillStyle = color + '55'; // semi-transparent
+      ctx.fillRect(x + 1, y, Math.max(1, barW - 2), barH);
+    }
+    // Outline
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < n_bins; i++) {
+      const barH = (bins[i] / maxDensity) * ch;
+      const x = pad.left + i * barW + barW / 2;
+      const y = pad.top + ch - barH;
+      i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+
+  // X axis
+  const mono = getComputedStyle(document.body).getPropertyValue('--mono');
+  const f = allScenarios[0].results.stats[metric]?.format || 'number';
+  ctx.fillStyle = '#475569';
+  ctx.font = '10px ' + mono;
+  ctx.textAlign = 'center';
+  for (let i = 0; i <= 5; i++) {
+    const v = globalMin + (globalMax - globalMin) * (i / 5);
+    const x = pad.left + (i / 5) * cw;
+    ctx.fillText(fmt(v, f), x, H - 8);
+  }
+
+  // Legend
+  ctx.font = '11px ' + mono;
+  allScenarios.forEach((s, i) => {
+    const lx = pad.left + i * 140;
+    ctx.fillStyle = colors[i];
+    ctx.fillRect(lx, pad.top - 16, 10, 10);
+    ctx.fillStyle = '#94a3b8';
+    ctx.textAlign = 'left';
+    ctx.fillText(s.name, lx + 14, pad.top - 7);
+  });
+
+  // Title
+  ctx.fillStyle = '#64748b';
+  ctx.font = '10px ' + getComputedStyle(document.body).getPropertyValue('--font');
+  ctx.textAlign = 'center';
+  ctx.fillText(metric.replace(/_/g, ' ') + ' — overlaid distributions', W / 2, H - 24);
 }
 
 // ═══════════════════════════════════════════
@@ -2901,6 +3272,92 @@ function renderBaseline(data) {
 }
 
 // ═══════════════════════════════════════════
+// SHAREABLE CONFIG URLS
+// ═══════════════════════════════════════════
+function shareConfig() {
+  if (!currentConfig) return showToast('No config loaded', 'error');
+  const json = JSON.stringify(currentConfig);
+  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const url = window.location.origin + '/#config=' + encoded;
+
+  // Copy to clipboard
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Share URL copied to clipboard', 'success');
+  }).catch(() => {
+    // Fallback
+    prompt('Share URL (copy it):', url);
+  });
+}
+
+function shareCurrentRun() {
+  if (!currentConfig || !currentResults) return showToast('Run a simulation first', 'error');
+  const payload = {
+    config: currentConfig,
+    overrides: collectOverrides(),
+    n_simulations: parseInt(document.getElementById('n-sims').value),
+    seed: parseInt(document.getElementById('seed').value),
+  };
+  const json = JSON.stringify(payload);
+  const encoded = btoa(unescape(encodeURIComponent(json)));
+  const url = window.location.origin + '/#run=' + encoded;
+
+  navigator.clipboard.writeText(url).then(() => {
+    showToast('Run URL copied — recipient will auto-simulate', 'success');
+  }).catch(() => {
+    prompt('Share URL (copy it):', url);
+  });
+}
+
+async function loadFromHash() {
+  const hash = window.location.hash.slice(1);
+  if (!hash) return;
+
+  try {
+    if (hash.startsWith('config=')) {
+      const json = decodeURIComponent(escape(atob(hash.slice(7))));
+      const config = JSON.parse(json);
+      // Save as temporary domain and load it
+      const res = await fetch('/api/save-domain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ config, filename: config.name || 'shared' })
+      });
+      const data = await res.json();
+      if (data.saved) {
+        await loadDomains();
+        selectDomain(data.file);
+        showToast('Loaded shared config: ' + (config.name || 'shared'), 'success');
+      }
+    } else if (hash.startsWith('run=')) {
+      const json = decodeURIComponent(escape(atob(hash.slice(4))));
+      const payload = JSON.parse(json);
+      // Save config, then run
+      const config = payload.config;
+      const saveRes = await fetch('/api/save-domain', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ config, filename: config.name || 'shared' })
+      });
+      const saveData = await saveRes.json();
+      if (saveData.saved) {
+        await loadDomains();
+        await selectDomain(saveData.file);
+        // Set simulation params
+        if (payload.n_simulations) document.getElementById('n-sims').value = payload.n_simulations;
+        if (payload.seed) document.getElementById('seed').value = payload.seed;
+        // Auto-run
+        showToast('Auto-running shared simulation...', 'info');
+        setTimeout(() => runSimulation(), 300);
+      }
+    }
+  } catch(e) {
+    showToast('Failed to load shared URL: ' + e.message, 'error');
+  }
+  // Clear hash so it doesn't reload on refresh
+  history.replaceState(null, '', window.location.pathname);
+}
+
+// ═══════════════════════════════════════════
 // INIT
 // ═══════════════════════════════════════════
 window.addEventListener('resize', () => {
@@ -2908,7 +3365,7 @@ window.addEventListener('resize', () => {
   if (activeTrajectory) drawTrajectory(activeTrajectory);
 });
 
-loadDomains();
+loadDomains().then(() => loadFromHash());
 </script>
 </body>
 </html>

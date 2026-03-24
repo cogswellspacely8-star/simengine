@@ -72,6 +72,87 @@ def _binomial(n, p):
 
 def _clamp(v, lo, hi): return max(lo, min(hi, v))
 
+# ---------------------------------------------------------------------------
+# Cholesky Decomposition for Correlated Sampling
+# ---------------------------------------------------------------------------
+def cholesky(matrix):
+    """Cholesky decomposition of a positive-definite matrix. Returns lower triangular L."""
+    n = len(matrix)
+    L = [[0.0] * n for _ in range(n)]
+    for i in range(n):
+        for j in range(i + 1):
+            s = sum(L[i][k] * L[j][k] for k in range(j))
+            if i == j:
+                val = matrix[i][i] - s
+                L[i][j] = math.sqrt(max(0, val))
+            else:
+                L[i][j] = (matrix[i][j] - s) / L[j][j] if L[j][j] > 0 else 0
+    return L
+
+def generate_correlated_normals(L, n):
+    """Generate n correlated standard normals using Cholesky factor L."""
+    z = [random.gauss(0, 1) for _ in range(n)]
+    return [sum(L[i][j] * z[j] for j in range(i + 1)) for i in range(n)]
+
+def normal_cdf_inv_approx(p):
+    """Approximate inverse normal CDF (Beasley-Springer-Moro algorithm)."""
+    if p <= 0: return -4.0
+    if p >= 1: return 4.0
+    if p == 0.5: return 0.0
+    # Rational approximation
+    t = math.sqrt(-2.0 * math.log(min(p, 1 - p)))
+    c0, c1, c2 = 2.515517, 0.802853, 0.010328
+    d1, d2, d3 = 1.432788, 0.189269, 0.001308
+    result = t - (c0 + c1 * t + c2 * t * t) / (1 + d1 * t + d2 * t * t + d3 * t * t * t)
+    return result if p > 0.5 else -result
+
+def normal_cdf_approx(x):
+    """Approximate standard normal CDF."""
+    t = 1.0 / (1.0 + 0.2316419 * abs(x))
+    d = 0.3989422804014327  # 1/sqrt(2*pi)
+    p = d * math.exp(-x * x / 2.0) * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
+    return 1.0 - p if x > 0 else p
+
+def apply_correlation_to_sample(base_value, var_def, correlated_z):
+    """Transform a correlated standard normal into the variable's distribution."""
+    # Convert correlated Z to uniform via normal CDF, then to target distribution
+    u = normal_cdf_approx(correlated_z)  # uniform [0,1]
+    dist = var_def.get("distribution", "fixed")
+    params = var_def.get("params", {})
+
+    if dist == "fixed":
+        return params.get("value", 0)
+    elif dist == "uniform":
+        lo, hi = params.get("low", 0), params.get("high", 1)
+        return lo + u * (hi - lo)
+    elif dist == "triangular":
+        lo, mode, hi = params.get("low", 0), params.get("mode", 0.5), params.get("high", 1)
+        fc = (mode - lo) / (hi - lo) if hi > lo else 0.5
+        if u < fc:
+            return lo + math.sqrt(u * (hi - lo) * (mode - lo))
+        else:
+            return hi - math.sqrt((1 - u) * (hi - lo) * (hi - mode))
+    elif dist == "normal":
+        mean, std = params.get("mean", 0), params.get("std", 1)
+        v = mean + std * correlated_z
+        return max(params.get("min", -1e18), min(params.get("max", 1e18), v))
+    elif dist == "lognormal":
+        median, spread = params.get("median", 1), params.get("spread", 0.5)
+        v = median * math.exp(spread * correlated_z)
+        return max(params.get("min", 0), min(params.get("max", 1e18), v))
+    elif dist == "bernoulli":
+        return 1.0 if u < params.get("p", 0.5) else 0.0
+    elif dist == "poisson":
+        # Use inverse CDF for Poisson
+        lam = params.get("lambda", 1)
+        k, p_cum = 0, math.exp(-lam)
+        while u > p_cum and k < 100:
+            k += 1
+            p_cum += math.exp(-lam + k * math.log(lam) - sum(math.log(i) for i in range(1, k + 1)))
+        return float(k)
+    else:
+        return base_value
+
 SAFE_BUILTINS = {
     "min": min, "max": max, "abs": abs, "round": round,
     "sum": sum, "len": len, "int": int, "float": float,
@@ -165,6 +246,30 @@ class DomainConfig:
         
         # v3: calibration metadata
         self.calibration = data.get("calibration", {})
+
+        # v3.1: correlations between variables
+        # Format: [{"vars": ["var_a", "var_b"], "rho": 0.6}, ...]
+        self.correlations = data.get("correlations", [])
+        self._corr_vars = []
+        self._corr_L = None
+        if self.correlations:
+            # Build correlation matrix and Cholesky factor
+            corr_var_set = set()
+            for c in self.correlations:
+                for v in c.get("vars", []):
+                    corr_var_set.add(v)
+            self._corr_vars = sorted(corr_var_set)
+            n = len(self._corr_vars)
+            idx = {v: i for i, v in enumerate(self._corr_vars)}
+            matrix = [[1.0 if i == j else 0.0 for j in range(n)] for i in range(n)]
+            for c in self.correlations:
+                vs = c.get("vars", [])
+                rho = c.get("rho", 0)
+                if len(vs) == 2 and vs[0] in idx and vs[1] in idx:
+                    i, j = idx[vs[0]], idx[vs[1]]
+                    matrix[i][j] = rho
+                    matrix[j][i] = rho
+            self._corr_L = cholesky(matrix)
     
     @classmethod
     def from_json(cls, path):
@@ -192,9 +297,20 @@ def simulate_one(config):
     for step in range(1, config.n_steps + 1):
         state["_step"] = step
         step_rec = {"_step": step}
-        
+
+        # Generate correlated samples if correlations defined
+        corr_samples = {}
+        if config._corr_L and config._corr_vars:
+            z_corr = generate_correlated_normals(config._corr_L, len(config._corr_vars))
+            for i, vname in enumerate(config._corr_vars):
+                if vname in config.all_variables:
+                    corr_samples[vname] = z_corr[i]
+
         for vname, vdef in config.all_variables.items():
-            state[vname] = sample_var(vdef, state)
+            if vname in corr_samples:
+                state[vname] = apply_correlation_to_sample(0, vdef, corr_samples[vname])
+            else:
+                state[vname] = sample_var(vdef, state)
             step_rec[vname] = state[vname]
         
         for logic in config.step_logic:

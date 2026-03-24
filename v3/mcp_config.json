@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "simengine": {
+      "command": "python3",
+      "args": ["/home/tony/projects/simengine/v3/mcp_server.py"]
+    }
+  }
+}
