@@ -786,8 +786,13 @@ Peer review reports and the system design paper are available on request. Contac
 
 ## License
 
-Copyright (c) 2026 Venture Horizon LLC. All rights reserved.
+SimEngine uses an **open-core** model.
 
-This software is proprietary. See [LICENSE](LICENSE) for full terms. No part of this software may be reproduced, distributed, or used without prior written consent of Venture Horizon LLC.
+- **Engine, server, kernels, diagnostics, Rust acceleration, and domain library** — [Apache License 2.0](LICENSE). Free to use, modify, self-host, embed in your own products, and redistribute under the terms of that license.
+- **Hosted SimEngine MCP service** (operated by OtrovertLabs) — [Commercial license](LICENSE-COMMERCIAL.md). Subscription tiers for managed hosting, OAuth, persistent state, SLAs, and enterprise features.
 
-For licensing inquiries, contact: https://venturehorizon.llc
+Self-hosting the open-source engine is and will remain free. The commercial license applies only to the hosted service and managed features that are not part of the open-source distribution.
+
+SimEngine is an **OtrovertLabs** product, published by Venture Horizon LLC.
+
+For commercial licensing, enterprise inquiries, or partnerships: https://otrovertlabs.com/contact
