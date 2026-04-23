@@ -26,6 +26,62 @@ cd v3 && python3 server.py
 
 That is it. No `pip install`, no Docker, no Node, no build step. Python 3.8+ is the only requirement.
 
+## Optional Native Acceleration
+
+The default engine remains pure Python. A Rust workspace now lives at the repo root
+for optional acceleration of metric reducers, trajectory bands, risk evaluation,
+histograms, and native pre-sampling of simple numeric variable distributions.
+
+This is opt-in and does not change the baseline workflow above.
+
+### Workspace layout
+
+```text
+Cargo.toml
+crates/
+├── simengine-core/   # pure Rust numeric kernels
+└── simengine-py/     # PyO3 extension module: simengine_native
+v3/native.py          # optional loader + Python fallback glue
+```
+
+### Build the native extension
+
+```bash
+cd crates/simengine-py
+python3 -m venv ../../.venv
+source ../../.venv/bin/activate
+pip install maturin
+maturin develop --release
+```
+
+After that, the existing Python engine will automatically use the native
+reducers and the native batch sampler when `simengine_native` is importable.
+If the module is missing or fails, SimEngine falls back to the existing
+Python implementation.
+
+The batch sampler is conservative:
+- it only activates for plain numeric variable params
+- it stays off for correlated configs
+- it can be disabled explicitly with `SIMENGINE_DISABLE_NATIVE_SAMPLING=1`
+
+This keeps the expression engine, accumulators, and metrics in Python while
+moving a larger chunk of the Monte Carlo loop into Rust.
+
+There is also a narrower native fast path for stochastic expressions:
+- `binomial(n, p)` can be delegated to Rust when the extension is installed
+- it can be disabled explicitly with `SIMENGINE_DISABLE_NATIVE_EXPR_SAMPLING=1`
+
+This helps domains whose `step_logic` relies heavily on `binomial(...)` while
+still leaving general expression evaluation in Python.
+
+On the Python side, repeated expressions are now compiled once and reused
+across Monte Carlo runs. That cache can be disabled explicitly with
+`SIMENGINE_DISABLE_EXPR_CACHE=1` for benchmarking or troubleshooting.
+
+The diagnostics module applies the same idea to its AST-only safe evaluator:
+parsed trees are reused across calls, and that cache can be disabled with
+`SIMENGINE_DISABLE_SAFE_EXPR_CACHE=1`.
+
 ---
 
 ## What It Does

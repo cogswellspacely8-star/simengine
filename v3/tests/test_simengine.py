@@ -10,6 +10,7 @@ import math
 import random
 import unittest
 import copy
+from unittest import mock
 
 # ---------------------------------------------------------------------------
 # Make v3 package importable
@@ -170,6 +171,13 @@ class TestSimulateOne(unittest.TestCase):
         # total accumulates income each step, should be positive
         self.assertGreater(result["final_state"]["total"], 0)
 
+    def test_presampled_steps_override_variable_sampling(self):
+        cfg = _cfg()
+        result = kernel.simulate_one(cfg, sampled_steps={"rate": [0.1, 0.2, 0.3]})
+
+        self.assertEqual([step["rate"] for step in result["history"]], [0.1, 0.2, 0.3])
+        self.assertEqual(result["metrics"]["final_total"], 600.0)
+
 
 class TestRunMonteCarlo(unittest.TestCase):
     """run_monte_carlo() returns stats with mean, median, p10, p90."""
@@ -275,9 +283,27 @@ class TestComputeFitness(unittest.TestCase):
         fitness = kernel.compute_fitness(mc, MINI_CONFIG["fitness"], MINI_CONFIG["safety"])
         self.assertIsInstance(fitness, (int, float))
 
+    def test_uses_precomputed_safety_when_provided(self):
+        cfg = _cfg()
+        mc = kernel.run_monte_carlo(cfg, seed=42, n_override=50)
+        precomputed_safety = {"all_passed": True, "chance": [], "cvar": []}
+
+        with mock.patch.object(kernel, "evaluate_safety", side_effect=AssertionError("should not be called")):
+            fitness = kernel.compute_fitness(
+                mc,
+                MINI_CONFIG["fitness"],
+                MINI_CONFIG["safety"],
+                safety_result=precomputed_safety,
+            )
+
+        self.assertIsInstance(fitness, (int, float))
+
 
 class TestEvalExpr(unittest.TestCase):
     """eval_expr() with safe builtins."""
+
+    def setUp(self):
+        kernel.clear_eval_expr_cache()
 
     def test_simple_arithmetic(self):
         self.assertEqual(kernel.eval_expr("2 + 3", {}), 5)
@@ -294,6 +320,28 @@ class TestEvalExpr(unittest.TestCase):
         result = kernel.eval_expr("this is not valid python +++ !!!", {})
         self.assertEqual(result, 0)
 
+    def test_compile_cache_reuses_compiled_expression(self):
+        with mock.patch("builtins.compile", wraps=compile) as compile_mock:
+            self.assertEqual(kernel.eval_expr("x + 1", {"x": 2}), 3)
+            self.assertEqual(kernel.eval_expr("x + 1", {"x": 4}), 5)
+
+        self.assertEqual(compile_mock.call_count, 1)
+
+    def test_compile_cache_can_be_disabled(self):
+        with mock.patch.dict(os.environ, {"SIMENGINE_DISABLE_EXPR_CACHE": "1"}):
+            with mock.patch("builtins.compile", wraps=compile) as compile_mock:
+                self.assertEqual(kernel.eval_expr("x + 1", {"x": 2}), 3)
+                self.assertEqual(kernel.eval_expr("x + 1", {"x": 4}), 5)
+
+        self.assertEqual(compile_mock.call_count, 2)
+
+    def test_invalid_expression_is_cached(self):
+        with mock.patch("builtins.compile", wraps=compile) as compile_mock:
+            self.assertEqual(kernel.eval_expr("not valid python +++", {}), 0)
+            self.assertEqual(kernel.eval_expr("not valid python +++", {}), 0)
+
+        self.assertEqual(compile_mock.call_count, 1)
+
 
 class TestEvolve(unittest.TestCase):
     """evolve() runs without crashing (small: 2 generations, population 3)."""
@@ -307,6 +355,37 @@ class TestEvolve(unittest.TestCase):
         self.assertIn("manifest", result)
         self.assertEqual(len(result["history"]), 2)
         self.assertIsInstance(result["best"]["fitness"], (int, float))
+
+    def test_worker_evaluates_safety_once(self):
+        mc_result = {
+            "stats": {"final_total": {"mean": 100.0, "median": 100.0}},
+            "raw_metrics": {"final_total": [100.0, 100.0]},
+        }
+        safety_result = {"all_passed": True, "chance": [], "cvar": []}
+
+        with mock.patch.object(kernel, "run_monte_carlo", return_value=mc_result):
+            with mock.patch.object(kernel, "evaluate_safety", return_value=safety_result) as safety_mock:
+                with mock.patch.object(kernel, "compute_fitness", wraps=kernel.compute_fitness) as fitness_mock:
+                    result = kernel._worker(
+                        (copy.deepcopy(MINI_CONFIG), MINI_CONFIG["fitness"], MINI_CONFIG["safety"], "run-1")
+                    )
+
+        self.assertEqual(safety_mock.call_count, 1)
+        self.assertEqual(fitness_mock.call_args.kwargs["safety_result"], safety_result)
+        self.assertEqual(result["safety"], safety_result)
+
+
+class TestTunableCache(unittest.TestCase):
+    def setUp(self):
+        kernel.clear_tunable_cache()
+
+    def test_prepare_tunable_specs_reuses_cache_entry(self):
+        cfg = _cfg()
+        first = kernel._prepare_tunable_specs(cfg.tunable)
+        second = kernel._prepare_tunable_specs(cfg.tunable)
+
+        self.assertIs(first, second)
+        self.assertEqual(len(kernel.TUNABLE_CACHE), 1)
 
 
 # ===================================================================
@@ -427,6 +506,38 @@ class TestConvergenceAnalysis(unittest.TestCase):
             cfg, checkpoints=[50], metric="final_total", seed=42, max_runs=50
         )
         self.assertEqual(result["metric"], "final_total")
+
+
+class TestSafeEvalExpr(unittest.TestCase):
+    """diagnostics.safe_eval_expr() reuses parsed ASTs safely."""
+
+    def setUp(self):
+        diagnostics.clear_safe_eval_expr_cache()
+
+    def test_safe_eval_expr_basic(self):
+        self.assertEqual(diagnostics.safe_eval_expr("x + 2", {"x": 3}), 5)
+
+    def test_safe_eval_expr_reuses_parsed_ast(self):
+        with mock.patch.object(diagnostics.ast, "parse", wraps=diagnostics.ast.parse) as parse_mock:
+            self.assertEqual(diagnostics.safe_eval_expr("x + 2", {"x": 3}), 5)
+            self.assertEqual(diagnostics.safe_eval_expr("x + 2", {"x": 8}), 10)
+
+        self.assertEqual(parse_mock.call_count, 1)
+
+    def test_safe_eval_expr_cache_can_be_disabled(self):
+        with mock.patch.dict(os.environ, {"SIMENGINE_DISABLE_SAFE_EXPR_CACHE": "1"}):
+            with mock.patch.object(diagnostics.ast, "parse", wraps=diagnostics.ast.parse) as parse_mock:
+                self.assertEqual(diagnostics.safe_eval_expr("x + 2", {"x": 3}), 5)
+                self.assertEqual(diagnostics.safe_eval_expr("x + 2", {"x": 8}), 10)
+
+        self.assertEqual(parse_mock.call_count, 2)
+
+    def test_safe_eval_expr_invalid_expression_is_cached(self):
+        with mock.patch.object(diagnostics.ast, "parse", wraps=diagnostics.ast.parse) as parse_mock:
+            self.assertEqual(diagnostics.safe_eval_expr("not valid python +++", {}), 0)
+            self.assertEqual(diagnostics.safe_eval_expr("not valid python +++", {}), 0)
+
+        self.assertEqual(parse_mock.call_count, 1)
 
 
 class TestDeterministicBaseline(unittest.TestCase):

@@ -10,3 +10,5 @@ evolution_results.json
 .bridge/
 .env
 .pytest_cache/
+target/
+.venv/

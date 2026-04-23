@@ -13,10 +13,15 @@ Design informed by:
   - ChatGPT-4o critique (March 2026)
 """
 
-import json, random, math, copy, time, statistics, sys, hashlib
+import json, random, math, copy, time, statistics, sys, hashlib, os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+try:
+    import native as native_runtime
+except Exception:
+    native_runtime = None
 
 # ---------------------------------------------------------------------------
 # Distribution Samplers
@@ -68,7 +73,22 @@ def _student_t(p):
     return max(p.get("min", -1e18), min(p.get("max", 1e18), result))
 
 def _binomial(n, p):
-    return sum(1 for _ in range(int(round(n))) if random.random() < p)
+    trials = max(0, int(round(n)))
+    probability = _clamp(float(p), 0.0, 1.0)
+
+    if not os.environ.get("SIMENGINE_DISABLE_NATIVE_EXPR_SAMPLING"):
+        native_backend = _get_native_backend()
+        if native_backend is not None and hasattr(native_backend, "sample_binomial"):
+            try:
+                return int(
+                    native_backend.sample_binomial(
+                        trials, probability, random.getrandbits(63)
+                    )
+                )
+            except Exception:
+                pass
+
+    return sum(1 for _ in range(trials) if random.random() < probability)
 
 def _clamp(v, lo, hi): return max(lo, min(hi, v))
 
@@ -163,9 +183,44 @@ SAFE_BUILTINS = {
     "range": range, "True": True, "False": False,
 }
 
-def eval_expr(expr, state):
+NATIVE_BATCH_SAMPLER_DISTRIBUTIONS = {
+    "fixed", "uniform", "triangular", "normal",
+    "lognormal", "bernoulli", "poisson", "student_t",
+}
+
+_INVALID_EXPR = object()
+_COMPILED_EXPR_CACHE = {}
+
+def clear_eval_expr_cache():
+    _COMPILED_EXPR_CACHE.clear()
+
+
+def _compile_expr_cached(expr):
+    if os.environ.get("SIMENGINE_DISABLE_EXPR_CACHE"):
+        try:
+            return compile(expr, "<simengine-expr>", "eval")
+        except Exception:
+            return _INVALID_EXPR
+
+    cached = _COMPILED_EXPR_CACHE.get(expr)
+    if cached is not None:
+        return cached
+
     try:
-        return eval(expr, {"__builtins__": SAFE_BUILTINS}, state)
+        compiled = compile(expr, "<simengine-expr>", "eval")
+    except Exception:
+        compiled = _INVALID_EXPR
+
+    _COMPILED_EXPR_CACHE[expr] = compiled
+    return compiled
+
+
+def eval_expr(expr, state):
+    compiled = _compile_expr_cached(expr)
+    if compiled is _INVALID_EXPR:
+        return 0
+    try:
+        return eval(compiled, {"__builtins__": SAFE_BUILTINS}, state)
     except:
         return 0
 
@@ -286,7 +341,7 @@ class DomainConfig:
 # ---------------------------------------------------------------------------
 # Simulation Runner
 # ---------------------------------------------------------------------------
-def simulate_one(config):
+def simulate_one(config, sampled_steps=None):
     state = dict(config.initial_state)
     state["_step"] = 0
     for acc in config.accumulators:
@@ -307,7 +362,10 @@ def simulate_one(config):
                     corr_samples[vname] = z_corr[i]
 
         for vname, vdef in config.all_variables.items():
-            if vname in corr_samples:
+            precomputed = sampled_steps.get(vname) if sampled_steps else None
+            if precomputed is not None and (step - 1) < len(precomputed):
+                state[vname] = precomputed[step - 1]
+            elif vname in corr_samples:
                 state[vname] = apply_correlation_to_sample(0, vdef, corr_samples[vname])
             else:
                 state[vname] = sample_var(vdef, state)
@@ -342,24 +400,85 @@ def percentile(data, pct):
     return data[f] * (c - k) + data[c] * (k - f)
 
 
-def run_monte_carlo(config, seed=None, n_override=None):
-    n = n_override or config.n_simulations
+def _get_native_backend():
+    if native_runtime is None:
+        return None
+    try:
+        return native_runtime.get_native_backend()
+    except Exception:
+        return None
+
+
+def _build_native_variable_plan(config):
+    plan = {}
+    for vname, vdef in config.all_variables.items():
+        distribution = vdef.get("distribution")
+        if distribution not in NATIVE_BATCH_SAMPLER_DISTRIBUTIONS:
+            return None
+
+        params = {}
+        for key, value in vdef.get("params", {}).items():
+            if isinstance(value, str) and value.startswith("$"):
+                return None
+            if not isinstance(value, (int, float)):
+                return None
+            params[key] = float(value)
+
+        plan[vname] = {"distribution": distribution, "params": params}
+    return plan
+
+
+def _native_sampling_seed(seed):
     if seed is not None:
-        random.seed(seed)
-    
-    all_metrics = {m: [] for m in config.metrics}
-    all_histories = []
-    
-    for _ in range(n):
-        r = simulate_one(config)
-        for m, v in r["metrics"].items():
-            all_metrics[m].append(v)
-        all_histories.append(r["history"])
-    
+        return int(seed) & ((1 << 64) - 1)
+    return random.getrandbits(63)
+
+
+def _prepare_native_presampled_runs(config, n_runs, seed=None, native_backend=None):
+    if os.environ.get("SIMENGINE_DISABLE_NATIVE_SAMPLING"):
+        return None
+
+    native_backend = native_backend or _get_native_backend()
+    if native_backend is None or not hasattr(native_backend, "sample_variable_grid"):
+        return None
+    if config._corr_L or config._corr_vars:
+        return None
+
+    variable_plan = _build_native_variable_plan(config)
+    if not variable_plan:
+        return None
+
+    try:
+        sampled = native_backend.sample_variable_grid(
+            variable_plan,
+            config.n_steps,
+            n_runs,
+            _native_sampling_seed(seed),
+        )
+    except Exception:
+        return None
+
+    prepared = [dict() for _ in range(n_runs)]
+    for vname, per_sim in sampled.items():
+        if len(per_sim) != n_runs:
+            return None
+        for sim_index, per_step in enumerate(per_sim):
+            if len(per_step) != config.n_steps:
+                return None
+            prepared[sim_index][vname] = per_step
+    return prepared
+
+
+def _metric_formats(config):
+    return {mname: config.metrics[mname].get("format", "number") for mname in config.metrics}
+
+
+def _compute_stats_python(all_metrics, metric_formats):
     stats = {}
     for mname, vals in all_metrics.items():
+        if not vals:
+            continue
         sv = sorted(vals)
-        fmt = config.metrics[mname].get("format", "number")
         stats[mname] = {
             "mean": round(statistics.mean(vals), 2),
             "median": round(statistics.median(vals), 2),
@@ -368,19 +487,111 @@ def run_monte_carlo(config, seed=None, n_override=None):
             "p25": round(percentile(sv, 25), 2),
             "p75": round(percentile(sv, 75), 2),
             "p90": round(percentile(sv, 90), 2),
-            "format": fmt,
+            "format": metric_formats.get(mname, "number"),
         }
-    
-    # Trajectory percentiles
+    return stats
+
+
+def _compute_trajectories_python(trajectory_samples):
     trajectories = {}
-    for acc in config.accumulators:
+    for acc, steps in trajectory_samples.items():
         p10, p50, p90 = [], [], []
-        for si in range(config.n_steps):
-            vals = sorted([h[si].get(acc, 0) for h in all_histories])
-            p10.append(round(percentile(vals, 10), 2))
-            p50.append(round(percentile(vals, 50), 2))
-            p90.append(round(percentile(vals, 90), 2))
+        for vals in steps:
+            sorted_vals = sorted(vals)
+            p10.append(round(percentile(sorted_vals, 10), 2))
+            p50.append(round(percentile(sorted_vals, 50), 2))
+            p90.append(round(percentile(sorted_vals, 90), 2))
         trajectories[acc] = {"p10": p10, "p50": p50, "p90": p90}
+    return trajectories
+
+
+def _evaluate_safety_python(raw, safety_config):
+    results = {"chance": [], "cvar": [], "all_passed": True}
+
+    for cc in safety_config.get("chance_constraints", []):
+        metric = cc["metric"]
+        vals = raw.get(metric, [])
+        if not vals:
+            continue
+
+        threshold = cc["threshold"]
+        max_prob = cc["max_prob"]
+
+        if cc["condition"] == "below":
+            violations = sum(1 for v in vals if v < threshold)
+        else:
+            violations = sum(1 for v in vals if v > threshold)
+
+        actual_prob = violations / len(vals)
+        passed = actual_prob <= max_prob
+
+        results["chance"].append({
+            "metric": metric, "condition": cc["condition"],
+            "threshold": threshold, "max_prob": max_prob,
+            "actual_prob": round(actual_prob, 4),
+            "passed": passed,
+        })
+        if not passed:
+            results["all_passed"] = False
+
+    for cv in safety_config.get("cvar_constraints", []):
+        metric = cv["metric"]
+        vals = raw.get(metric, [])
+        if not vals:
+            continue
+
+        alpha = cv["alpha"]
+        min_cvar = cv["min_cvar"]
+        actual_cvar = compute_cvar(vals, alpha)
+        passed = actual_cvar >= min_cvar
+
+        results["cvar"].append({
+            "metric": metric, "alpha": alpha,
+            "min_cvar": min_cvar,
+            "actual_cvar": round(actual_cvar, 2),
+            "passed": passed,
+        })
+        if not passed:
+            results["all_passed"] = False
+
+    return results
+
+
+def run_monte_carlo(config, seed=None, n_override=None):
+    n = n_override or config.n_simulations
+    if seed is not None:
+        random.seed(seed)
+
+    native_backend = _get_native_backend()
+    presampled_runs = _prepare_native_presampled_runs(config, n, seed=seed, native_backend=native_backend)
+
+    all_metrics = {m: [] for m in config.metrics}
+    trajectory_samples = {acc: [[] for _ in range(config.n_steps)] for acc in config.accumulators}
+    
+    for run_index in range(n):
+        r = simulate_one(config, sampled_steps=presampled_runs[run_index] if presampled_runs else None)
+        for m, v in r["metrics"].items():
+            all_metrics[m].append(v)
+        for si, step in enumerate(r["history"]):
+            for acc, per_step_values in trajectory_samples.items():
+                per_step_values[si].append(step.get(acc, 0))
+
+    metric_formats = _metric_formats(config)
+    stats = None
+    trajectories = None
+
+    if native_backend is not None:
+        try:
+            stats = native_backend.reduce_metrics(all_metrics, metric_formats)
+            trajectories = native_backend.compute_trajectories(trajectory_samples)
+        except Exception:
+            stats = None
+            trajectories = None
+
+    if stats is None:
+        stats = _compute_stats_python(all_metrics, metric_formats)
+    if trajectories is None:
+        trajectories = _compute_trajectories_python(trajectory_samples)
     
     return {
         "domain": config.name, "n_simulations": n,
@@ -420,61 +631,19 @@ def evaluate_safety(mc_result, safety_config):
     
     Returns dict of constraint evaluations with pass/fail.
     """
-    results = {"chance": [], "cvar": [], "all_passed": True}
     raw = mc_result.get("raw_metrics", {})
-    
-    for cc in safety_config.get("chance_constraints", []):
-        metric = cc["metric"]
-        vals = raw.get(metric, [])
-        if not vals:
-            continue
-        
-        threshold = cc["threshold"]
-        max_prob = cc["max_prob"]
-        
-        if cc["condition"] == "below":
-            violations = sum(1 for v in vals if v < threshold)
-        else:
-            violations = sum(1 for v in vals if v > threshold)
-        
-        actual_prob = violations / len(vals)
-        passed = actual_prob <= max_prob
-        
-        results["chance"].append({
-            "metric": metric, "condition": cc["condition"],
-            "threshold": threshold, "max_prob": max_prob,
-            "actual_prob": round(actual_prob, 4),
-            "passed": passed,
-        })
-        if not passed:
-            results["all_passed"] = False
-    
-    for cv in safety_config.get("cvar_constraints", []):
-        metric = cv["metric"]
-        vals = raw.get(metric, [])
-        if not vals:
-            continue
-        
-        alpha = cv["alpha"]
-        min_cvar = cv["min_cvar"]
-        actual_cvar = compute_cvar(vals, alpha)
-        passed = actual_cvar >= min_cvar
-        
-        results["cvar"].append({
-            "metric": metric, "alpha": alpha,
-            "min_cvar": min_cvar,
-            "actual_cvar": round(actual_cvar, 2),
-            "passed": passed,
-        })
-        if not passed:
-            results["all_passed"] = False
-    
-    return results
+    native_backend = _get_native_backend()
+    if native_backend is not None:
+        try:
+            return native_backend.evaluate_safety(raw, safety_config)
+        except Exception:
+            pass
+    return _evaluate_safety_python(raw, safety_config)
 
 # ---------------------------------------------------------------------------
 # Fitness with Safety Penalty
 # ---------------------------------------------------------------------------
-def compute_fitness(mc_result, fitness_def, safety_config=None):
+def compute_fitness(mc_result, fitness_def, safety_config=None, safety_result=None):
     """Fitness score with CVaR penalty for safety violations."""
     state = {}
     for mname, mstats in mc_result["stats"].items():
@@ -490,7 +659,7 @@ def compute_fitness(mc_result, fitness_def, safety_config=None):
     
     # Safety penalty
     if safety_config:
-        safety = evaluate_safety(mc_result, safety_config)
+        safety = safety_result if safety_result is not None else evaluate_safety(mc_result, safety_config)
         if not safety["all_passed"]:
             # Count violations and apply penalty
             n_violations = sum(1 for c in safety["chance"] if not c["passed"])
@@ -504,36 +673,65 @@ def compute_fitness(mc_result, fitness_def, safety_config=None):
 # ---------------------------------------------------------------------------
 TUNABLE_CACHE = {}
 
+
+def clear_tunable_cache():
+    TUNABLE_CACHE.clear()
+
+
+def _prepare_tunable_specs(tunable):
+    cache_key = tuple(
+        (
+            param.get("path"),
+            tuple(param.get("range", [])),
+        )
+        for param in tunable
+    )
+    cached = TUNABLE_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    prepared = []
+    for param in tunable:
+        parts = tuple(param["path"].split("."))
+        prepared.append({
+            "path": param["path"],
+            "parts": parts,
+            "parents": parts[:-1],
+            "leaf": parts[-1],
+            "range": tuple(param["range"]),
+        })
+
+    TUNABLE_CACHE[cache_key] = prepared
+    return prepared
+
+
+def _resolve_parent(obj, parents):
+    current = obj
+    for part in parents:
+        current = current[part]
+    return current
+
+
 def mutate_config(config_dict, tunable, rate=0.3, strength=0.15):
     new = copy.deepcopy(config_dict)
-    for param in tunable:
+    for param in _prepare_tunable_specs(tunable):
         if random.random() > rate:
             continue
-        path = param["path"]
         lo, hi = param["range"]
-        parts = path.split(".")
-        obj = new
-        for p in parts[:-1]:
-            obj = obj[p]
-        current = obj[parts[-1]]
+        obj = _resolve_parent(new, param["parents"])
+        current = obj[param["leaf"]]
         delta = random.gauss(0, (hi - lo) * strength)
-        obj[parts[-1]] = round(max(lo, min(hi, current + delta)), 4)
+        obj[param["leaf"]] = round(max(lo, min(hi, current + delta)), 4)
     return new
 
 
 def crossover(a, b, tunable):
     child = copy.deepcopy(a)
-    for param in tunable:
+    for param in _prepare_tunable_specs(tunable):
         if random.random() < 0.5:
-            path = param["path"]
-            parts = path.split(".")
-            obj_b = b
-            for p in parts[:-1]:
-                obj_b = obj_b[p]
-            obj_c = child
-            for p in parts[:-1]:
-                obj_c = obj_c[p]
-            obj_c[parts[-1]] = obj_b[parts[-1]]
+            obj_b = _resolve_parent(b, param["parents"])
+            obj_c = _resolve_parent(child, param["parents"])
+            obj_c[param["leaf"]] = obj_b[param["leaf"]]
     return child
 
 
@@ -541,8 +739,8 @@ def _worker(args):
     config_dict, fitness_def, safety_config, run_id = args
     cfg = DomainConfig.from_dict(config_dict)
     mc = run_monte_carlo(cfg, n_override=min(cfg.n_simulations, 2000))
-    fitness = compute_fitness(mc, fitness_def, safety_config)
     safety = evaluate_safety(mc, safety_config) if safety_config else {"all_passed": True}
+    fitness = compute_fitness(mc, fitness_def, safety_config, safety_result=safety)
     
     return {
         "id": run_id, "fitness": fitness, "config": config_dict,

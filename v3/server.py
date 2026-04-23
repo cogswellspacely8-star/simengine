@@ -20,6 +20,11 @@ from diagnostics import (
     deterministic_baseline, compare_to_baseline
 )
 
+try:
+    import native as native_runtime
+except Exception:
+    native_runtime = None
+
 DOMAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "domains")
 STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
 
@@ -53,7 +58,23 @@ def load_domain(filename):
         return json.load(f)
 
 
+def _get_native_backend():
+    if native_runtime is None:
+        return None
+    try:
+        return native_runtime.get_native_backend()
+    except Exception:
+        return None
+
+
 def build_histograms(raw_metrics, stats, n_bins=40):
+    native_backend = _get_native_backend()
+    if native_backend is not None:
+        try:
+            return native_backend.build_histograms(raw_metrics, n_bins)
+        except Exception:
+            pass
+
     histograms = {}
     for metric, values in raw_metrics.items():
         if not values:

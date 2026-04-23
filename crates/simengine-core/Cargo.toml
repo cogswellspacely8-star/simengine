@@ -1,0 +1,11 @@
+[package]
+name = "simengine-core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version = "1.90"
+
+[dependencies]
+rand = "0.8"
+rand_distr = "0.4"
+serde = { version = "1", features = ["derive"] }

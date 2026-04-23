@@ -433,7 +433,7 @@ def run_with_mcp_sdk():
 
     async def main():
         async with stdio_server() as (read_stream, write_stream):
-            await server.run(read_stream, write_stream)
+            await server.run(read_stream, write_stream, server.create_initialization_options())
 
     asyncio.run(main())
 

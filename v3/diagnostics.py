@@ -15,6 +15,7 @@ Usage:
 """
 
 import json
+import os
 import random
 import math
 import statistics
@@ -22,8 +23,43 @@ import copy
 from typing import Optional
 from kernel import (
     DomainConfig, run_monte_carlo, simulate_one,
-    compute_fitness, percentile as _percentile, SAMPLERS, sampler
+    compute_fitness, percentile as _percentile, SAMPLERS, sampler,
+    _prepare_native_presampled_runs
 )
+
+try:
+    import native as native_runtime
+except Exception:
+    native_runtime = None
+
+
+def _get_native_backend():
+    if native_runtime is None:
+        return None
+    try:
+        return native_runtime.get_native_backend()
+    except Exception:
+        return None
+
+
+def _checkpoint_stats(values, metric_name):
+    native_backend = _get_native_backend()
+    if native_backend is not None:
+        try:
+            reduced = native_backend.reduce_metrics({metric_name: list(values)}, {metric_name: "number"})
+            if metric_name in reduced:
+                return reduced[metric_name]
+        except Exception:
+            pass
+
+    sorted_values = sorted(values)
+    return {
+        "mean": round(statistics.mean(values), 2),
+        "median": round(statistics.median(values), 2),
+        "std": round(statistics.stdev(values), 2) if len(values) > 1 else 0,
+        "p10": round(_percentile(sorted_values, 10), 2),
+        "p90": round(_percentile(sorted_values, 90), 2),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -56,11 +92,18 @@ def convergence_analysis(config: DomainConfig,
         metric = list(config.metrics.keys())[0]
     
     random.seed(seed)
+    native_backend = _get_native_backend()
+    presampled_runs = _prepare_native_presampled_runs(
+        config, max(checkpoints), seed=seed, native_backend=native_backend
+    )
     
     # Run all simulations at once, then subsample
     all_values = []
-    for _ in range(max(checkpoints)):
-        result = simulate_one(config)
+    for run_index in range(max(checkpoints)):
+        result = simulate_one(
+            config,
+            sampled_steps=presampled_runs[run_index] if presampled_runs else None,
+        )
         # Extract the target metric from final state
         state = result["final_state"]
         state.update(result["metrics"])
@@ -70,13 +113,12 @@ def convergence_analysis(config: DomainConfig,
     records = []
     for n in checkpoints:
         subset = all_values[:n]
-        sorted_sub = sorted(subset)
-        
-        mean_val = statistics.mean(subset)
-        median_val = statistics.median(subset)
-        std_val = statistics.stdev(subset) if len(subset) > 1 else 0
-        p10 = _percentile(sorted_sub, 10)
-        p90 = _percentile(sorted_sub, 90)
+        checkpoint = _checkpoint_stats(subset, metric)
+        mean_val = checkpoint["mean"]
+        median_val = checkpoint["median"]
+        std_val = checkpoint["std"]
+        p10 = checkpoint["p10"]
+        p90 = checkpoint["p90"]
         
         # Standard error of the mean
         se_mean = std_val / math.sqrt(n) if n > 0 else 0
@@ -507,6 +549,34 @@ SAFE_COMPARISONS = {
     ast.GtE: operator.ge,
 }
 
+_INVALID_SAFE_EXPR = object()
+_SAFE_EXPR_AST_CACHE = {}
+
+
+def clear_safe_eval_expr_cache():
+    _SAFE_EXPR_AST_CACHE.clear()
+
+
+def _parse_safe_expr_cached(expr: str):
+    if os.environ.get("SIMENGINE_DISABLE_SAFE_EXPR_CACHE"):
+        try:
+            return ast.parse(expr, mode='eval')
+        except SyntaxError:
+            return _INVALID_SAFE_EXPR
+
+    cached = _SAFE_EXPR_AST_CACHE.get(expr)
+    if cached is not None:
+        return cached
+
+    try:
+        tree = ast.parse(expr, mode='eval')
+    except SyntaxError:
+        tree = _INVALID_SAFE_EXPR
+
+    _SAFE_EXPR_AST_CACHE[expr] = tree
+    return tree
+
+
 def safe_eval_expr(expr: str, state: dict, allowed_callables: dict = None) -> any:
     """
     AST-based expression evaluator that never calls eval().
@@ -529,10 +599,9 @@ def safe_eval_expr(expr: str, state: dict, allowed_callables: dict = None) -> an
     
     # Merge state into namespace
     namespace = {**allowed_callables, **state}
-    
-    try:
-        tree = ast.parse(expr, mode='eval')
-    except SyntaxError:
+
+    tree = _parse_safe_expr_cached(expr)
+    if tree is _INVALID_SAFE_EXPR:
         return 0
     
     def _eval_node(node):

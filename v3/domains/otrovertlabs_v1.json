@@ -1,0 +1,235 @@
+{
+  "name": "OtrovertLabs Year-1 Pipeline (v2 Growth Plan Calibrated)",
+  "description": "OtrovertLabs 12-month revenue simulation calibrated to the April 2026 v2 growth plan. Models productized-services revenue (three tiers) + monthly retainers, with project-to-retainer conversion flywheel, churn, and quarterly checkpoints. First Phase-C deliverable per SimEngine GTM decision (2026-04-16).",
+  "_disclaimer": "Numbers derive from the v2 growth plan targets (Year 1 $260K-$466K). The plan's bundled tiers ($5K-$8K / $10K-$18K / $20K-$35K) are used here; see decisions/2026-04-15-pricing-per-service.md for the live-site per-service pricing model — run a second config for that scenario to test which model produces better outcomes.",
+  "n_simulations": 5000,
+  "n_steps": 12,
+  "step_label": "month",
+  "seed": 42,
+
+  "_schema_note": "v3 separates parameters (uncertain, updatable), controls (operator decisions), and exogenous (uncontrollable environment). Extends business_pipeline_v3.json pattern with tier mix and retainer accumulation.",
+
+  "parameters": {
+    "close_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.15, "mode": 0.30, "high": 0.50},
+      "calibration": {
+        "source": "v2 growth plan target: 10-15 conversations/week → 3-5 projects/month at steady state. Implies ~25-40% close rate on qualified inquiries.",
+        "note": "Updates monthly via Bayesian Beta-Binomial as real close data accumulates from Supabase project_inquiries table.",
+        "updatable": true,
+        "update_method": "Bayesian conjugate (Beta-Binomial)"
+      }
+    },
+    "tier_mix_foundation": {
+      "distribution": "triangular",
+      "params": {"low": 0.40, "mode": 0.55, "high": 0.70},
+      "calibration": {
+        "source": "v2 plan: Foundation tier ($5K-$8K) expected to be majority of deals, higher tiers less frequent.",
+        "note": "Three tier buckets must sum to 1.0 per deal; mix of Foundation / Growth / Full.",
+        "updatable": true
+      }
+    },
+    "tier_mix_growth": {
+      "distribution": "triangular",
+      "params": {"low": 0.20, "mode": 0.30, "high": 0.45},
+      "calibration": {"source": "v2 plan: Growth tier ($10K-$18K) is target mid-market.", "updatable": true}
+    },
+    "project_value_foundation": {
+      "distribution": "triangular",
+      "params": {"low": 5000, "mode": 6500, "high": 8000},
+      "calibration": {"source": "v2 plan Foundation tier: $5K-$8K", "updatable": false}
+    },
+    "project_value_growth": {
+      "distribution": "triangular",
+      "params": {"low": 10000, "mode": 14000, "high": 18000},
+      "calibration": {"source": "v2 plan Growth tier: $10K-$18K", "updatable": false}
+    },
+    "project_value_full": {
+      "distribution": "triangular",
+      "params": {"low": 20000, "mode": 27500, "high": 35000},
+      "calibration": {"source": "v2 plan Full Operating Layer tier: $20K-$35K", "updatable": false}
+    },
+    "project_to_retainer_conversion": {
+      "distribution": "triangular",
+      "params": {"low": 0.40, "mode": 0.60, "high": 0.75},
+      "calibration": {
+        "source": "v2 plan target: 60%+ project-to-retainer conversion.",
+        "note": "This is the central flywheel assumption. Critical for Year 2 revenue.",
+        "updatable": true,
+        "update_method": "Bayesian Beta-Binomial after observing actual conversions."
+      }
+    },
+    "retainer_blended_average": {
+      "distribution": "triangular",
+      "params": {"low": 1000, "mode": 1400, "high": 2000},
+      "calibration": {"source": "v2 plan: blended retainer average $1,400/mo across Essential/Growth/Premium tiers.", "updatable": false}
+    },
+    "monthly_churn_rate": {
+      "distribution": "triangular",
+      "params": {"low": 0.05, "mode": 0.08, "high": 0.12},
+      "calibration": {
+        "source": "v2 plan ceiling: 8-10% monthly churn.",
+        "note": "Service-retainer churn in bootstrapped agencies typically 5-15%/mo.",
+        "updatable": true
+      }
+    }
+  },
+
+  "controls": {
+    "monthly_fixed_costs": {
+      "distribution": "fixed",
+      "params": {"value": 2500},
+      "calibration": {
+        "source": "Wiki: $4/mo GitHub + $20/mo Netlify + $24/mo infra (Supabase free + power) + tooling (Resend, domain, misc) ≈ $50-$100/mo base. Add working fund (software subscriptions, tools, prepaid services) to reach ~$2,500/mo operating baseline.",
+        "updatable": false
+      }
+    },
+    "monthly_living_costs": {
+      "distribution": "fixed",
+      "params": {"value": 4500},
+      "calibration": {"source": "Tony's cost-of-living estimate. Placeholder — adjust.", "updatable": false}
+    },
+    "available_hours": {
+      "distribution": "fixed",
+      "params": {"value": 160},
+      "calibration": {"source": "40 hrs/wk solo founder.", "updatable": false}
+    }
+  },
+
+  "exogenous": {
+    "leads_per_month": {
+      "distribution": "triangular",
+      "params": {"low": 4, "mode": 10, "high": 20},
+      "calibration": {
+        "source": "v2 plan: 10-15 conversations/week aspiration, calibrated to monthly volume. Currently closer to lower bound per live-site analytics.",
+        "note": "Updated via Gamma-Poisson from Supabase project_inquiries counts.",
+        "updatable": true,
+        "update_method": "Poisson conjugate (Gamma-Poisson)"
+      }
+    },
+    "hours_per_project_foundation": {
+      "distribution": "triangular",
+      "params": {"low": 20, "mode": 35, "high": 60},
+      "calibration": {"source": "v2 plan Foundation: 3-4 week delivery, estimate 30-40 hrs.", "updatable": true}
+    },
+    "hours_per_project_growth": {
+      "distribution": "triangular",
+      "params": {"low": 40, "mode": 65, "high": 100},
+      "calibration": {"source": "v2 plan Growth: 5-7 week delivery, estimate 50-80 hrs.", "updatable": true}
+    },
+    "hours_per_project_full": {
+      "distribution": "triangular",
+      "params": {"low": 80, "mode": 140, "high": 200},
+      "calibration": {"source": "v2 plan Full: 8-12 week delivery, estimate 100-180 hrs.", "updatable": true}
+    },
+    "lead_growth_rate": {
+      "distribution": "fixed",
+      "params": {"value": 1.05},
+      "calibration": {"source": "v2 plan aspiration: 5%/month lead growth from content + referrals."}
+    }
+  },
+
+  "initial_state": {
+    "cumulative_revenue_projects": 0,
+    "cumulative_revenue_retainers": 0,
+    "cumulative_costs": 0,
+    "active_retainers": 0,
+    "total_deals": 0,
+    "total_hours": 0
+  },
+
+  "step_logic": [
+    {"target": "growth_adj",         "expr": "lead_growth_rate ** (_step - 1)"},
+    {"target": "adj_leads",          "expr": "leads_per_month * growth_adj"},
+    {"target": "deals_this_month",   "expr": "binomial(round(adj_leads), close_rate)"},
+
+    {"target": "tier_mix_full",      "expr": "max(0, 1 - tier_mix_foundation - tier_mix_growth)"},
+    {"target": "deals_foundation",   "expr": "binomial(deals_this_month, tier_mix_foundation)"},
+    {"target": "deals_growth",       "expr": "binomial(max(0, deals_this_month - deals_foundation), tier_mix_growth / max(0.01, tier_mix_growth + tier_mix_full))"},
+    {"target": "deals_full",         "expr": "max(0, deals_this_month - deals_foundation - deals_growth)"},
+
+    {"target": "revenue_foundation", "expr": "deals_foundation * project_value_foundation"},
+    {"target": "revenue_growth",     "expr": "deals_growth * project_value_growth"},
+    {"target": "revenue_full",       "expr": "deals_full * project_value_full"},
+    {"target": "revenue_projects",   "expr": "revenue_foundation + revenue_growth + revenue_full"},
+
+    {"target": "hours_used",         "expr": "deals_foundation * hours_per_project_foundation + deals_growth * hours_per_project_growth + deals_full * hours_per_project_full"},
+
+    {"target": "new_retainers",      "expr": "binomial(deals_this_month, project_to_retainer_conversion)"},
+    {"target": "churned_retainers",  "expr": "binomial(active_retainers, monthly_churn_rate)"},
+    {"target": "net_retainer_change","expr": "new_retainers - churned_retainers"},
+
+    {"target": "revenue_retainers_step", "expr": "active_retainers * retainer_blended_average"},
+    {"target": "monthly_costs",      "expr": "monthly_fixed_costs + monthly_living_costs"},
+
+    {"target": "utilization",        "expr": "hours_used / available_hours if available_hours > 0 else 0"},
+    {"target": "overflow",           "expr": "max(0, hours_used - available_hours)"}
+  ],
+
+  "accumulators": {
+    "cumulative_revenue_projects":  "cumulative_revenue_projects + revenue_projects",
+    "cumulative_revenue_retainers": "cumulative_revenue_retainers + revenue_retainers_step",
+    "cumulative_revenue":            "cumulative_revenue_projects + cumulative_revenue_retainers",
+    "cumulative_costs":              "cumulative_costs + monthly_costs",
+    "cash_position":                 "cumulative_revenue - cumulative_costs",
+    "active_retainers":              "max(0, active_retainers + net_retainer_change)",
+    "total_deals":                   "total_deals + deals_this_month",
+    "total_hours":                   "total_hours + hours_used"
+  },
+
+  "metrics": {
+    "annual_revenue":         {"expr": "cumulative_revenue",            "format": "dollar"},
+    "annual_revenue_projects": {"expr": "cumulative_revenue_projects",  "format": "dollar"},
+    "annual_revenue_retainers":{"expr": "cumulative_revenue_retainers", "format": "dollar"},
+    "annual_deals":           {"expr": "total_deals",                   "format": "number"},
+    "final_cash":             {"expr": "cash_position",                 "format": "dollar"},
+    "year_end_retainers":     {"expr": "active_retainers",              "format": "number"},
+    "avg_utilization":        {"expr": "total_hours / (available_hours * 12)", "format": "percent"}
+  },
+
+  "safety": {
+    "chance_constraints": [
+      {
+        "metric": "annual_revenue",
+        "condition": "below",
+        "threshold": 260000,
+        "max_prob": 0.25,
+        "rationale": "v2 plan Year-1 floor is $260K. Exceeding 25% probability of falling below implies the growth plan is aspirational rather than achievable under current assumptions."
+      },
+      {
+        "metric": "final_cash",
+        "condition": "below",
+        "threshold": 0,
+        "max_prob": 0.10,
+        "rationale": "Cannot end Year 1 cash-negative with more than 10% probability — bootstrapping has no runway cushion."
+      }
+    ],
+    "cvar_constraints": [
+      {
+        "metric": "final_cash",
+        "alpha": 0.10,
+        "min_cvar": -30000,
+        "rationale": "In the worst 10% of scenarios, cash deficit must not exceed $30K — Tony's maximum tolerable drawdown without external capital."
+      }
+    ]
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "min(100, annual_revenue_median / 4000)",           "weight": 0.25, "name": "revenue"},
+      {"expr": "min(100, year_end_retainers_median * 3)",          "weight": 0.25, "name": "flywheel"},
+      {"expr": "max(0, 100 - (1 if annual_revenue_p10 < 260000 else 0) * 100)", "weight": 0.20, "name": "v2_floor_respect"},
+      {"expr": "min(100, final_cash_median / 500)",                "weight": 0.15, "name": "cash_health"},
+      {"expr": "max(0, 100 - avg_utilization_median * 120)",       "weight": 0.15, "name": "capacity"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "parameters.close_rate.params.mode",                    "range": [0.15, 0.60]},
+    {"path": "parameters.tier_mix_foundation.params.mode",           "range": [0.30, 0.80]},
+    {"path": "parameters.project_to_retainer_conversion.params.mode","range": [0.30, 0.80]},
+    {"path": "parameters.monthly_churn_rate.params.mode",            "range": [0.03, 0.20]},
+    {"path": "parameters.retainer_blended_average.params.mode",      "range": [800, 2500]},
+    {"path": "exogenous.leads_per_month.params.mode",                "range": [4, 30]}
+  ]
+}
