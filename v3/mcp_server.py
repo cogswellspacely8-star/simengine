@@ -239,6 +239,38 @@ TOOLS = [
             "required": ["domain"],
         },
     },
+    {
+        "name": "decide_under_uncertainty",
+        "description": (
+            "Decision gate for agents. Runs a Monte Carlo simulation and returns whether to "
+            "PROCEED or ESCALATE based on how much of the OUTCOME distribution falls inside an "
+            "acceptable range you specify. Returns the full outcome distribution plus a "
+            "proceed/escalate flag and a plain-English reason. Use this to stop a multi-step "
+            "agent from acting on an overconfident point estimate. NOTE: this models OUTCOME "
+            "RISK (the spread of results given uncertain inputs) — not the language model's own "
+            "token confidence."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "domain": {"type": "string", "description": "Domain config filename (alternative to config)"},
+                "config": {"type": "object", "description": "Inline domain config JSON (alternative to domain filename)"},
+                "metric": {"type": "string", "description": "The output metric to evaluate the decision against"},
+                "acceptable": {
+                    "type": "object",
+                    "description": "Acceptable range for the metric; provide at least one of 'min' or 'max'.",
+                    "properties": {
+                        "min": {"type": "number", "description": "Lowest acceptable value (omit for no lower bound)"},
+                        "max": {"type": "number", "description": "Highest acceptable value (omit for no upper bound)"},
+                    },
+                },
+                "min_confidence": {"type": "number", "description": "Probability mass that must fall within the acceptable range to proceed (default: 0.8)"},
+                "n_simulations": {"type": "integer", "description": "Number of simulations to run (default: from config)"},
+                "seed": {"type": "integer", "description": "Random seed for reproducibility (default: 42)"},
+            },
+            "required": ["metric", "acceptable"],
+        },
+    },
 ]
 
 
@@ -384,6 +416,75 @@ def handle_baseline_comparison(args):
     return result
 
 
+def handle_decide_under_uncertainty(args):
+    if args.get("config"):
+        data = args["config"]
+    elif args.get("domain"):
+        data = _load_domain(args["domain"])
+    else:
+        return {"error": "Provide either 'domain' (filename) or 'config' (inline JSON)"}
+
+    metric = args.get("metric")
+    if not metric:
+        return {"error": "Provide 'metric': the output metric to evaluate the decision against"}
+
+    acceptable = args.get("acceptable") or {}
+    lo = acceptable.get("min")
+    hi = acceptable.get("max")
+    if lo is None and hi is None:
+        return {"error": "Provide 'acceptable' with at least one of 'min' or 'max'"}
+
+    min_confidence = args.get("min_confidence", 0.8)
+    seed = args.get("seed", 42)
+    n_sims = args.get("n_simulations")
+
+    cfg = DomainConfig.from_dict(data)
+    mc = run_monte_carlo(cfg, seed=seed, n_override=n_sims)
+    raw = mc.get("raw_metrics", {})
+    vals = raw.get(metric)
+    if not vals:
+        return {"error": f"Metric '{metric}' not found. Available metrics: {sorted(raw.keys())}"}
+
+    def _within(v):
+        if lo is not None and v < lo:
+            return False
+        if hi is not None and v > hi:
+            return False
+        return True
+
+    n_within = sum(1 for v in vals if _within(v))
+    prob = n_within / len(vals)
+    proceed = prob >= min_confidence
+
+    bounds = []
+    if lo is not None:
+        bounds.append(f">= {lo:,}")
+    if hi is not None:
+        bounds.append(f"<= {hi:,}")
+    bound_str = " and ".join(bounds)
+
+    if proceed:
+        reason = (f"{prob:.0%} of {len(vals):,} simulated outcomes for '{metric}' fall "
+                  f"within the acceptable range ({bound_str}) — at or above the "
+                  f"{min_confidence:.0%} confidence required to proceed.")
+    else:
+        reason = (f"Only {prob:.0%} of {len(vals):,} simulated outcomes for '{metric}' fall "
+                  f"within the acceptable range ({bound_str}); the {min_confidence:.0%} "
+                  f"confidence required to proceed is not met. Escalate or gather more data.")
+
+    return {
+        "metric": metric,
+        "decision": "proceed" if proceed else "escalate",
+        "proceed": proceed,
+        "probability_within_bounds": round(prob, 4),
+        "min_confidence": min_confidence,
+        "acceptable": {"min": lo, "max": hi},
+        "distribution": mc["stats"].get(metric, {}),
+        "n_simulations": mc["n_simulations"],
+        "reason": reason,
+    }
+
+
 HANDLERS = {
     "simulate": handle_simulate,
     "list_domains": handle_list_domains,
@@ -393,6 +494,7 @@ HANDLERS = {
     "convergence_check": handle_convergence_check,
     "sensitivity_analysis": handle_sensitivity_analysis,
     "baseline_comparison": handle_baseline_comparison,
+    "decide_under_uncertainty": handle_decide_under_uncertainty,
 }
 
 

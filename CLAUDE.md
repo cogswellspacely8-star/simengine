@@ -1,0 +1,92 @@
+# CLAUDE.md — SimEngine
+
+## What this is
+
+A domain-agnostic Monte Carlo simulation and decision intelligence system. Define variables, logic, and risk tolerances in JSON; the engine simulates thousands of futures and (optionally) evolves toward strategies that respect safety constraints. Used both as a standalone web UI and as an MCP/HTTP tool for AI agents.
+
+**Open-core licensed.** The engine in this repo is Apache 2.0. The hosted MCP service is commercial (see `LICENSE-COMMERCIAL.md`). Don't conflate the two when modifying licenses or deployment guidance.
+
+## Hard constraint: zero Python dependencies
+
+The default engine uses **only the Python standard library.** This is a load-bearing design choice — it means SimEngine runs anywhere Python 3.8+ runs, no pip install required. **Do not add `requirements.txt` entries or `import` statements that pull external packages into `v3/*.py`.** If you think you need a third-party lib, you almost certainly don't — check `kernel.py` and `bayesian.py` for the pattern.
+
+The Rust acceleration crates under `crates/` are the only exception, and they're explicitly **opt-in** — the Python code falls back gracefully when `simengine_native` isn't importable.
+
+`v3/feeds/` (real-time data adapters like Polymarket Gamma) is also opt-in and network-touching, but stays inside the stdlib promise — it uses only `urllib`. The core engine never imports `feeds/`. Treat any new feed as opt-in and ToS-careful: market data is an **internal simulation input**, never a rebroadcast feed or trade signal.
+
+## Stack
+
+- **Engine:** Python 3.8+ stdlib (`v3/kernel.py`, `v3/bayesian.py`, `v3/diagnostics.py`, `v3/calibration.py`)
+- **Web server:** Python stdlib `http.server` (`v3/server.py`, port 8420)
+- **UI:** Single-page vanilla HTML/JS/CSS (`v3/static/index.html`) — no React, no framework, no build step
+- **Native acceleration (optional):** Rust crates at `crates/simengine-core` and `crates/simengine-py` (PyO3), built with maturin
+- **Tests:** Python `unittest` at `v3/tests/`
+- **MCP server:** `v3/mcp_server.py` (config: `v3/mcp_config.json`)
+
+## Local dev
+
+```bash
+# Run the web UI (the canonical entry point)
+cd v3 && python3 server.py
+# -> http://localhost:8420
+
+# Run tests
+make test                # Python tests
+make rust-test          # Rust crate tests
+
+# Build native acceleration (one-time)
+make native-install
+make native-check       # confirm import works
+make native-bench       # compare native vs pure-Python perf
+```
+
+`smoke_test.py` at the repo root is a quick sanity check.
+
+## Layout
+
+```
+v3/                        ALL production code lives here
+  kernel.py                Monte Carlo engine, distributions, optimizer, manifests
+  server.py                HTTP server + all API endpoints
+  bayesian.py              Conjugate prior updates
+  diagnostics.py           Convergence, sensitivity, AST evaluator
+  calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger
+  native.py                Optional Rust loader + Python fallback glue
+  mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)
+  static/index.html        Vanilla SPA UI (one file)
+  domains/                 Example JSON configs (saas, real_estate, etc.)
+  feeds/                   OPT-IN real-time data adapters (Polymarket Gamma); stdlib urllib only
+  tests/                   unittest suites
+crates/
+  simengine-core/          Pure Rust numeric kernels
+  simengine-py/            PyO3 bridge (module: simengine_native)
+scripts/
+  bench_native.py          Performance comparison
+  install_native.sh        Native build helper
+Makefile                   Targets: venv, native-install, native-check, native-test, native-bench, test, rust-test
+```
+
+## Things to verify before claiming a change works
+
+1. `make test` passes
+2. If you touched a Rust crate: `make rust-test` and `make native-bench`
+3. If you touched the kernel or distributions: run a known domain config (e.g. `v3/domains/business_pipeline_v3.json`) and confirm the histogram + risk gauge make sense
+4. If you touched the API: hit `/api/health` and POST a config to `/api/simulate` with curl
+5. If you touched the UI: open `http://localhost:8420` and exercise the affected feature
+6. **Most important:** confirm the pure-Python path still works without the Rust extension. `SIMENGINE_DISABLE_NATIVE_SAMPLING=1 python3 v3/server.py` should produce identical results (within Monte Carlo noise) to the native path.
+
+## Don't do
+
+- Don't add a Python dependency to `v3/`. The pure-stdlib promise is the brand.
+- Don't add a frontend build step. The UI is one HTML file by design.
+- Don't make the Rust extension required. It must remain opt-in with graceful fallback.
+- Don't change the default port (8420) without updating `mcp_config.json`, all docs, and any agent integrations that hardcoded it.
+- Don't break the JSON config schema in `domains/_template.json` — domain configs are user-authored and a schema break is a usability regression.
+- Don't move production code out of `v3/`. The README documents that location and external integrations may rely on it.
+
+## Environment overrides (handy for benchmarking and triage)
+
+- `SIMENGINE_DISABLE_NATIVE_SAMPLING=1` — force pure-Python sampling
+- `SIMENGINE_DISABLE_NATIVE_EXPR_SAMPLING=1` — disable native binomial fast path
+- `SIMENGINE_DISABLE_EXPR_CACHE=1` — disable parsed-expression cache
+- `SIMENGINE_DISABLE_SAFE_EXPR_CACHE=1` — disable diagnostics AST cache

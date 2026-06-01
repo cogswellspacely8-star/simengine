@@ -760,6 +760,68 @@ The `/api/simulate` response includes everything an agent needs to reason about 
 
 To compare alternatives, an agent can POST multiple configs (varying the controls) and compare fitness scores, safety evaluations, or specific metric percentiles across the responses.
 
+### Decision Gate: `decide_under_uncertainty` (MCP)
+
+Multi-step agents compound overconfident point answers. The `decide_under_uncertainty` MCP tool turns a simulation into a **proceed / escalate** verdict: it runs the Monte Carlo, measures how much of the *outcome* distribution lands inside a range you accept, and returns the flag plus the full distribution and a plain-English reason.
+
+It models **outcome risk** -- the spread of results given uncertain inputs -- not the language model's own token confidence. The two are complementary; do not conflate them.
+
+**Arguments:** `metric` (required), `acceptable` (`{"min": ..., "max": ...}`, at least one bound), `min_confidence` (probability mass that must land in range to proceed, default 0.8), plus `domain` or inline `config`, and optional `seed` / `n_simulations`.
+
+```json
+{
+  "metric": "annual_gross_income",
+  "decision": "proceed",
+  "proceed": true,
+  "probability_within_bounds": 0.92,
+  "min_confidence": 0.8,
+  "acceptable": {"min": 40000, "max": null},
+  "distribution": {"median": 68000, "p10": 44000, "p90": 95000, "format": "dollar"},
+  "n_simulations": 5000,
+  "reason": "92% of 5,000 simulated outcomes for 'annual_gross_income' fall within the acceptable range (>= 40,000) -- at or above the 80% confidence required to proceed."
+}
+```
+
+See [`docs/decision-gate.md`](docs/decision-gate.md) for the full agent pattern.
+
+---
+
+## Calibration & Track Record
+
+A Monte Carlo engine will always emit a confident-looking distribution. The only thing that separates *"a calculator that produces plausible numbers"* from *"a forecasting instrument with a demonstrated hit rate"* is a track record scored against reality. `v3/calibration.py` is that spine -- pure stdlib, zero dependencies.
+
+**Proper scoring rules:** `brier_score`, `log_loss`, `crps_sample`.
+
+**Forecast ledger:** record a forecast now, resolve it against the real outcome later, score how well-calibrated you have been over time.
+
+```python
+from calibration import CalibrationLedger
+
+ledger = CalibrationLedger("forecasts.db")
+fid = ledger.record("Annual gross >= $40k?", 0.82, metric="annual_gross_income")
+# ... the year resolves ...
+ledger.resolve(fid, 1)
+print(ledger.score())   # {"n": 1, "brier": 0.0324, "log_loss": 0.198}
+```
+
+Brier 0.0 is perfect; 0.25 is the score of always guessing 50/50; 1.0 is worst. Log-loss punishes confident-and-wrong forecasts harder. Lower is better for both. Time is the moat: the track record only accumulates if logging starts now.
+
+---
+
+## Real-Time Data (opt-in)
+
+The core engine is offline and pure-stdlib. The `v3/feeds/` package is the optional bridge to live data — the only part of SimEngine that touches the network, still using only `urllib` (no new dependencies), and never imported by the core.
+
+The first adapter, `feeds/polymarket.py`, turns a live Polymarket prediction-market price into a **calibrated prior**: a market-implied probability becomes a SimEngine variable you can drop into a domain config and then tighten with the Beta-Binomial updater as your own evidence arrives. Price in → prior → posterior, not price in → price out.
+
+```python
+from feeds import polymarket
+markets = polymarket.fetch_markets(query="fed rate", limit=5)
+prior = polymarket.market_prior(markets[0], strength=20)   # -> a triangular variable_def
+```
+
+See [`docs/feeds.md`](docs/feeds.md). Market prices are treated as internal simulation inputs, never a rebroadcast feed or trade signal.
+
 ---
 
 ## What the Numbers Mean
