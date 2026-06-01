@@ -193,6 +193,26 @@ def handle_ask(body, _complete=None):
     return res, (200 if res["valid"] else 422)
 
 
+def handle_llm_status(_get=None):
+    """Report the LLM backend and (for Ollama) which models are installed,
+    so the UI can offer a model picker. Returns (payload, status)."""
+    from llm import backends
+    backend = os.environ.get("SIMENGINE_LLM_BACKEND", "ollama").lower()
+    configured = os.environ.get("SIMENGINE_LLM_MODEL") or backends.DEFAULT_MODELS.get(backend, "qwen2.5")
+    installed = backends.list_ollama_models(_get=_get) if backend == "ollama" else []
+    if backend == "ollama":
+        default = backends.suggest_ollama_model(preferred=configured, _get=_get) or configured
+    else:
+        default = configured
+    return {
+        "backend": backend,
+        "configured_model": configured,
+        "installed_models": installed,
+        "default_model": default,
+        "backends": list(backends.DEFAULT_MODELS.keys()),
+    }, 200
+
+
 def save_domain(filename, data):
     """Save a domain config to the domains directory."""
     safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', filename.replace('.json', ''))
@@ -326,6 +346,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/domains":
             self._json_response(list_domains())
+            return
+
+        if path == "/api/llm/status":
+            payload, status = handle_llm_status()
+            self._json_response(payload, status)
             return
 
         if path.startswith("/api/domain/"):

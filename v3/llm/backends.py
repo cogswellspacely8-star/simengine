@@ -23,11 +23,21 @@ DEFAULT_MODELS = {
     "ollama": "qwen2.5",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-3-5-haiku-latest",
+    "deepseek": "deepseek-chat",
 }
 
 
 class LLMError(Exception):
     """Raised when an LLM backend is unreachable, unconfigured, or misbehaves."""
+
+
+class LLMHTTPError(LLMError):
+    """An HTTP error from a backend, carrying the status code and response body."""
+
+    def __init__(self, status, body=""):
+        self.status = status
+        self.body = body
+        super().__init__(f"HTTP {status}: {body}")
 
 
 # ---------------------------------------------------------------------------
@@ -36,14 +46,61 @@ class LLMError(Exception):
 
 def _default_post(url, headers, payload, timeout=None):
     import urllib.request
+    import urllib.error
     if timeout is None:
         timeout = float(os.environ.get("SIMENGINE_LLM_TIMEOUT", "120"))
     data = json.dumps(payload).encode("utf-8")
     hdrs = {"Content-Type": "application/json"}
     hdrs.update(headers)
     req = urllib.request.Request(url, data=data, headers=hdrs, method="POST")
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = ""
+        try:
+            body = e.read().decode("utf-8")[:300]
+        except Exception:
+            pass
+        raise LLMHTTPError(e.code, body)
+
+
+def _default_get(url, timeout=None):
+    import urllib.request
+    if timeout is None:
+        timeout = float(os.environ.get("SIMENGINE_LLM_TIMEOUT", "120"))
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
+
+
+def list_ollama_models(_get=None):
+    """Return the names of models installed in Ollama, or [] if it can't be reached."""
+    get = _get or _default_get
+    host = os.environ.get("OLLAMA_HOST", DEFAULT_OLLAMA_HOST).rstrip("/")
+    try:
+        data = get(f"{host}/api/tags")
+        return [m["name"] for m in data.get("models", []) if m.get("name")]
+    except Exception:
+        return []
+
+
+def suggest_ollama_model(preferred=None, _get=None):
+    """Pick a usable installed model: `preferred` if present, else a sensible
+    instruct/chat model from what's installed, else None."""
+    installed = list_ollama_models(_get=_get)
+    if not installed:
+        return None
+    if preferred and preferred in installed:
+        return preferred
+    prefer_substrings = ["qwen2.5", "instruct", "hermes", "llama3", "mistral", "qwen", "deepseek"]
+    for sub in prefer_substrings:
+        for name in installed:
+            if sub in name.lower() and "embed" not in name.lower():
+                return name
+    for name in installed:
+        if "embed" not in name.lower():
+            return name
+    return installed[0]
 
 
 # ---------------------------------------------------------------------------
@@ -65,7 +122,22 @@ def _hint(backend):
                 "then `ollama pull qwen2.5`. Or set SIMENGINE_LLM_BACKEND=openai with an OPENAI_API_KEY.")
     if backend == "openai":
         return "Check OPENAI_API_KEY, OPENAI_BASE_URL, and your network."
+    if backend == "deepseek":
+        return "Check DEEPSEEK_API_KEY and your network."
     return "Check your API key and network."
+
+
+def _explain_http_error(backend, model, err):
+    """Turn a raw HTTP error into an actionable message."""
+    if backend == "ollama" and err.status == 404:
+        return LLMError(
+            f"Ollama has no model named '{model}'. Pull it with `ollama pull {model}`, "
+            f"choose one you already have (run `ollama list`), or set SIMENGINE_LLM_MODEL "
+            f"/ pass --model."
+        )
+    if err.status in (401, 403):
+        return LLMError(f"The {backend} backend rejected the request (HTTP {err.status}). {_hint(backend)}")
+    return LLMError(f"The {backend} backend returned HTTP {err.status}: {err.body} {_hint(backend)}")
 
 
 # ---------------------------------------------------------------------------
@@ -126,10 +198,22 @@ def _parse_anthropic(resp):
     return resp["content"][0]["text"]
 
 
+def _build_deepseek(messages, model, temperature, json_mode):
+    key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise LLMError("DEEPSEEK_API_KEY is not set. Get a key at https://platform.deepseek.com.")
+    base = os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    payload = {"model": model, "messages": messages, "temperature": temperature}
+    if json_mode:
+        payload["response_format"] = {"type": "json_object"}
+    return f"{base}/chat/completions", {"Authorization": f"Bearer {key}"}, payload
+
+
 _BACKENDS = {
     "ollama": (_build_ollama, _parse_ollama),
     "openai": (_build_openai, _parse_openai),
     "anthropic": (_build_anthropic, _parse_anthropic),
+    "deepseek": (_build_deepseek, _parse_openai),  # DeepSeek is OpenAI-compatible
 }
 
 
@@ -155,6 +239,8 @@ def complete(messages, *, model=None, temperature=0.0, json_mode=False,
     post = _post or _default_post
     try:
         resp = post(url, headers, payload)
+    except LLMHTTPError as e:
+        raise _explain_http_error(b, model, e)
     except LLMError:
         raise
     except Exception as e:
