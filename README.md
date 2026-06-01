@@ -844,6 +844,8 @@ Safety constraints translate directly to decision language:
 
 ## Documentation
 
+**New to SimEngine? Start with the [plain-language guide](docs/guide/).** It explains what SimEngine is, how to read results, who it is for, how to explain it to others, and how to model your own decision — no background required.
+
 Peer review reports and the system design paper are available on request. Contact the maintainer for access.
 
 ## License
