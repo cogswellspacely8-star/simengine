@@ -92,6 +92,7 @@ SYSTEM_PROMPT = (
     "- Per-step values are single numbers, NOT lists: never use sum(), len(), filter, lambda, or comprehensions on a step target or accumulator.\n"
     "- The ONLY names allowed are the functions listed above plus your own variables / step targets / accumulators. There is no `inf`, no `n_steps`, no `pi`. For 'no upper limit', just omit the upper bound or use a large number.\n"
     "- To report the CHANCE of something (e.g. the chance of losing money), use a safety chance_constraint — NOT a metric. Metrics are point quantities like final cash or total revenue.\n"
+    "- Do NOT build percentage / ROI / profitability metrics that divide by a starting amount — there is no separate baseline name to divide by, and dividing by zero breaks the run. Report totals and final values (final_cash, total_profit) and let the reader judge.\n"
     "- Prefer ranges (triangular) for anything uncertain; use `fixed` only for things you truly know.\n\n"
     "EXAMPLE 1 (minimal):\n" + json.dumps(_EXAMPLE_COIN) + "\n\n"
     "EXAMPLE 2 (a real decision with a safety limit):\n" + json.dumps(_EXAMPLE_CONTRACT) + "\n"
