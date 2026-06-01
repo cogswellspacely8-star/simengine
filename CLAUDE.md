@@ -12,7 +12,7 @@ The default engine uses **only the Python standard library.** This is a load-bea
 
 The Rust acceleration crates under `crates/` are the only exception, and they're explicitly **opt-in** — the Python code falls back gracefully when `simengine_native` isn't importable.
 
-`v3/feeds/` (real-time data adapters like Polymarket Gamma) is also opt-in and network-touching, but stays inside the stdlib promise — it uses only `urllib`. The core engine never imports `feeds/`. Treat any new feed as opt-in and ToS-careful: market data is an **internal simulation input**, never a rebroadcast feed or trade signal.
+`v3/feeds/` (real-time data adapters like Polymarket Gamma) and `v3/llm/` (the natural-language front door) are also opt-in and network-touching, but stay inside the stdlib promise — they use only `urllib`. The core engine never imports them. Treat any new feed as opt-in and ToS-careful: market data is an **internal simulation input**, never a rebroadcast feed or trade signal. The `llm/` module turns a question into a config via a draft→validate→repair loop; the engine's own `validate_config` (in `validation.py`) grounds whatever the model produces.
 
 ## Stack
 
@@ -22,6 +22,7 @@ The Rust acceleration crates under `crates/` are the only exception, and they're
 - **Native acceleration (optional):** Rust crates at `crates/simengine-core` and `crates/simengine-py` (PyO3), built with maturin
 - **Tests:** Python `unittest` at `v3/tests/`
 - **MCP server:** `v3/mcp_server.py` (config: `v3/mcp_config.json`)
+- **Natural-language front door (optional):** `v3/llm/` + the `v3/sim_ask.py` CLI + the `/api/ask` endpoint + the web "Ask anything" tab. Local-first via Ollama; OpenAI/Anthropic via env var.
 
 ## Local dev
 
@@ -51,11 +52,14 @@ v3/                        ALL production code lives here
   bayesian.py              Conjugate prior updates
   diagnostics.py           Convergence, sensitivity, AST evaluator
   calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger
+  validation.py            Canonical config validation (shared by server + llm compiler)
   native.py                Optional Rust loader + Python fallback glue
   mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)
+  sim_ask.py               CLI: ask a plain-language question -> config -> run -> explain
   static/index.html        Vanilla SPA UI (one file)
   domains/                 Example JSON configs (saas, real_estate, etc.)
   feeds/                   OPT-IN real-time data adapters (Polymarket Gamma); stdlib urllib only
+  llm/                     OPT-IN natural-language front door (backends, compiler, explain, ask); stdlib urllib only
   tests/                   unittest suites
 crates/
   simengine-core/          Pure Rust numeric kernels
@@ -90,3 +94,12 @@ Makefile                   Targets: venv, native-install, native-check, native-t
 - `SIMENGINE_DISABLE_NATIVE_EXPR_SAMPLING=1` — disable native binomial fast path
 - `SIMENGINE_DISABLE_EXPR_CACHE=1` — disable parsed-expression cache
 - `SIMENGINE_DISABLE_SAFE_EXPR_CACHE=1` — disable diagnostics AST cache
+
+### LLM front door (`v3/llm/`, `sim_ask.py`, `/api/ask`)
+
+- `SIMENGINE_LLM_BACKEND` — `ollama` (default) | `openai` | `anthropic`
+- `SIMENGINE_LLM_MODEL` — model name (default: a small instruct model, `qwen2.5`)
+- `SIMENGINE_LLM_TIMEOUT` — per-request seconds (default 120; raise for slow local models)
+- `OLLAMA_HOST` (default `http://localhost:11434`)
+- `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com/v1`; the base URL also covers llama.cpp / LM Studio / vLLM)
+- `ANTHROPIC_API_KEY`

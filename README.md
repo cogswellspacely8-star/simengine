@@ -824,6 +824,43 @@ See [`docs/feeds.md`](docs/feeds.md). Market prices are treated as internal simu
 
 ---
 
+## Ask SimEngine Anything (natural language)
+
+Don't want to write a config? Describe your decision in plain words and let an LLM build the model for you. SimEngine drafts a config, validates it against the engine, **repairs** any errors, runs the simulation, and explains the result — so even small local models stay reliable, because the engine grounds whatever the model produces.
+
+This is **opt-in** and stdlib-only. It defaults to a **local** model via [Ollama](https://ollama.com) — free, private, no API key. Set an environment variable to use a hosted model instead.
+
+### CLI
+
+```bash
+# With Ollama running (e.g. `ollama pull qwen2.5`):
+python3 v3/sim_ask.py "Should I take an $8k/mo, 6-month contract if there's a 30% chance it overruns?"
+```
+
+Flags: `--n` (simulations), `--seed`, `--save NAME` (persist the config to `domains/`), `--show-config`, `--json`, `--model NAME`, `--backend`.
+
+### Web
+
+Open `http://localhost:8420`, click **Ask anything**, type your question, and run. You get a plain-language answer, the key numbers, the safety verdict, and the generated model — which you can save as a reusable domain.
+
+### API
+
+`POST /api/ask` with `{"question": "...", "n_simulations": 3000, "seed": 42}` returns `{config, results, explanation, attempts, valid}`.
+
+### Backends (environment variables)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `SIMENGINE_LLM_BACKEND` | `ollama` | `ollama` \| `openai` \| `anthropic` |
+| `SIMENGINE_LLM_MODEL` | `qwen2.5` | model name |
+| `SIMENGINE_LLM_TIMEOUT` | `120` | per-request seconds (raise for slow local models) |
+| `OPENAI_API_KEY` / `OPENAI_BASE_URL` | — | OpenAI-compatible (also covers llama.cpp / LM Studio / vLLM) |
+| `ANTHROPIC_API_KEY` | — | Anthropic |
+
+Decision support and scenario analysis only — never financial advice or a trade signal.
+
+---
+
 ## What the Numbers Mean
 
 When you run a simulation, each metric reports:

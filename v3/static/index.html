@@ -1088,7 +1088,10 @@ canvas { width: 100%; display: block; }
     <div class="sidebar-section" id="domain-section">
       <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
         Domains
-        <span class="btn-add-var" onclick="openWizard()" style="font-size:10px;padding:3px 8px">+ New</span>
+        <span style="display:flex;gap:6px">
+          <span class="btn-add-var" onclick="openAsk()" style="font-size:10px;padding:3px 8px;background:#2a6f4b">Ask anything</span>
+          <span class="btn-add-var" onclick="openWizard()" style="font-size:10px;padding:3px 8px">+ New</span>
+        </span>
       </div>
       <div id="domain-list"></div>
     </div>
@@ -2082,6 +2085,134 @@ function exportReport() {
 let wizardVars = [];
 let wizardSteps = [];
 let wizardMetrics = [];
+
+// ---------------------------------------------------------------------------
+// Ask anything — natural-language -> config -> run -> explanation (/api/ask)
+// ---------------------------------------------------------------------------
+let askLastConfig = null;
+
+function askEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function openAsk() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'ask-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closeAsk(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Ask Anything</h2>
+      <div class="modal-sub">Describe any decision or uncertain question in plain words. SimEngine builds a model, runs thousands of futures, and explains the answer. Decision support, not financial advice.</div>
+      <div class="form-group">
+        <label class="form-label">Your question</label>
+        <textarea class="form-textarea" id="ask-question" placeholder="e.g., Should I take an $8k/mo, 6-month contract if there's a 30% chance it overruns?"></textarea>
+        <div class="form-hint">Runs against a local model (Ollama) by default, or a hosted model if the server has an API key configured. Small local models can take 30-90 seconds.</div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Runs</label><input class="form-input" id="ask-n" type="number" value="3000" min="100" step="500"></div>
+        <div class="form-group"><label class="form-label">Seed</label><input class="form-input" id="ask-seed" type="number" value="42"></div>
+      </div>
+      <div id="ask-result"></div>
+      <div class="modal-actions">
+        <button class="btn btn-compare" onclick="closeAsk()">Close</button>
+        <button class="btn btn-run" id="ask-run-btn" onclick="runAsk()">Ask SimEngine</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  document.getElementById('ask-question').focus();
+}
+
+function closeAsk() {
+  const o = document.getElementById('ask-overlay');
+  if (o) o.remove();
+}
+
+async function runAsk() {
+  const q = document.getElementById('ask-question').value.trim();
+  if (!q) { showToast('Type a question first', 'error'); return; }
+  const n = parseInt(document.getElementById('ask-n').value) || 3000;
+  const seed = parseInt(document.getElementById('ask-seed').value) || 42;
+  const btn = document.getElementById('ask-run-btn');
+  const out = document.getElementById('ask-result');
+  btn.disabled = true; btn.textContent = 'Thinking…';
+  out.innerHTML = '<div class="form-hint" style="margin-top:12px">Building a model and running simulations… small local models can take 30-90s.</div>';
+  try {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, n_simulations: n, seed: seed }),
+    });
+    const data = await res.json();
+    if (!res.ok || data.error) {
+      const extra = data.errors ? `<div class="form-hint">${data.errors.map(askEsc).join('<br>')}</div>` : '';
+      out.innerHTML = `<div style="margin-top:12px;padding:12px;border-radius:8px;background:#3a1f1f;color:#ffb3b3">${askEsc(data.error || 'Could not build a model for that question. Try rephrasing.')}</div>${extra}`;
+      return;
+    }
+    askLastConfig = data.config;
+    out.innerHTML = renderAsk(data);
+  } catch (e) {
+    out.innerHTML = `<div style="margin-top:12px;padding:12px;border-radius:8px;background:#3a1f1f;color:#ffb3b3">${askEsc(String(e))}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Ask SimEngine';
+  }
+}
+
+function renderAsk(data) {
+  const r = data.results || {};
+  const stats = r.stats || {};
+  const fmt = (v, f) => f === 'dollar' ? ('$' + Math.round(v).toLocaleString())
+    : f === 'percent' ? ((v * 100).toFixed(1) + '%')
+    : (Math.round(v * 100) / 100).toLocaleString();
+  const rows = Object.entries(stats).map(([k, s]) =>
+    `<tr><td style="padding:4px 8px">${askEsc(k.replace(/_/g, ' '))}</td>` +
+    `<td style="padding:4px 8px;text-align:right">${fmt(s.median, s.format)}</td>` +
+    `<td style="padding:4px 8px;text-align:right;opacity:.8">${fmt(s.p10, s.format)} – ${fmt(s.p90, s.format)}</td></tr>`
+  ).join('');
+  const safety = r.safety || {};
+  let safetyHtml = '';
+  if ('all_passed' in safety) {
+    const ok = safety.all_passed;
+    safetyHtml = `<div style="margin-top:10px;font-weight:600;color:${ok ? '#6ee7a0' : '#ffb3b3'}">Safety: ${ok ? 'all constraints passed' : 'FAILED — there are real risks here'}</div>`;
+  }
+  const att = data.attempts || 1;
+  return `
+    <div style="margin-top:14px;line-height:1.55;white-space:normal">${askEsc(data.explanation).replace(/\n/g, '<br>')}</div>
+    <table style="margin-top:14px;width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="opacity:.7;text-align:left"><th style="padding:4px 8px">Metric</th><th style="padding:4px 8px;text-align:right">Median</th><th style="padding:4px 8px;text-align:right">80% range</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+    ${safetyHtml}
+    <details style="margin-top:12px"><summary style="cursor:pointer;opacity:.8">Show the generated model (${att} model attempt${att > 1 ? 's' : ''})</summary>
+      <pre style="margin-top:8px;max-height:260px;overflow:auto;background:#0f1115;padding:10px;border-radius:8px;font-size:11px">${askEsc(JSON.stringify(data.config, null, 2))}</pre>
+    </details>
+    <div class="modal-actions" style="margin-top:12px">
+      <button class="btn btn-evolve" onclick="saveAskDomain()">Save as Domain</button>
+    </div>`;
+}
+
+async function saveAskDomain() {
+  if (!askLastConfig) return;
+  try {
+    const res = await fetch('/api/save-domain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ config: askLastConfig, filename: askLastConfig.name || 'ask' }),
+    });
+    const data = await res.json();
+    if (data.saved) {
+      showToast('Saved as ' + data.file, 'info');
+      await loadDomains();
+      closeAsk();
+      selectDomain(data.file);
+    } else {
+      showToast('Save failed: ' + (data.errors || []).join('; '), 'error');
+    }
+  } catch (e) {
+    showToast('Save failed: ' + e, 'error');
+  }
+}
 
 function openWizard() {
   wizardVars = []; wizardSteps = []; wizardMetrics = [];

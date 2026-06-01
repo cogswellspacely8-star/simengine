@@ -160,57 +160,37 @@ def generate_narrative(stats, safety, config_data):
     return "\n".join(lines)
 
 
-def validate_config(data):
-    """Validate a domain config, return list of errors."""
-    errors = []
-    if not isinstance(data, dict):
-        return ["Config must be a JSON object"]
+# Canonical config validation now lives in validation.py (shared with the LLM compiler).
+from validation import validate_config
 
-    if not data.get("name"):
-        errors.append("Missing 'name' field")
 
-    n_steps = data.get("n_steps")
-    if not isinstance(n_steps, int) or n_steps < 1:
-        errors.append("'n_steps' must be a positive integer")
+def handle_ask(body, _complete=None):
+    """Natural-language question -> config -> run -> explanation.
 
-    # Check variables exist
-    has_vars = False
-    for cat in ("parameters", "controls", "exogenous", "variables"):
-        if data.get(cat) and isinstance(data[cat], dict):
-            has_vars = True
-            for vname, vdef in data[cat].items():
-                dist = vdef.get("distribution")
-                if dist not in SAMPLERS:
-                    errors.append(f"Variable '{vname}': unknown distribution '{dist}'. Available: {', '.join(SAMPLERS.keys())}")
-                if not vdef.get("params"):
-                    errors.append(f"Variable '{vname}': missing 'params'")
-    if not has_vars:
-        errors.append("No variables defined (need at least one of: parameters, controls, exogenous)")
-
-    if not data.get("step_logic"):
-        errors.append("Missing 'step_logic' (at least one computation step needed)")
-    else:
-        for i, step in enumerate(data["step_logic"]):
-            if not step.get("target"):
-                errors.append(f"step_logic[{i}]: missing 'target'")
-            if not step.get("expr") and not step.get("sample"):
-                errors.append(f"step_logic[{i}]: missing 'expr' or 'sample'")
-
-    if not data.get("metrics"):
-        errors.append("Missing 'metrics' (need at least one output metric)")
-
-    # Try a quick test run
-    if not errors:
-        try:
-            cfg = DomainConfig.from_dict(data)
-            mc = run_monte_carlo(cfg, seed=42, n_override=10)
-            for mname in mc["stats"]:
-                if math.isnan(mc["stats"][mname]["mean"]):
-                    errors.append(f"Metric '{mname}' produced NaN — check your expressions")
-        except Exception as e:
-            errors.append(f"Test run failed: {str(e)}")
-
-    return errors
+    Returns (payload, status). The llm/ module is opt-in: if it cannot be
+    imported or the backend is unreachable, this returns a clean error instead
+    of taking down the rest of the server.
+    """
+    question = (body.get("question") or "").strip()
+    if not question:
+        return {"error": "Provide a 'question' describing your decision."}, 400
+    try:
+        from llm.ask import answer_question
+        from llm.backends import LLMError
+    except Exception as e:  # pragma: no cover - import-time failure is environmental
+        return {"error": f"LLM module unavailable: {e}"}, 503
+    try:
+        res = answer_question(
+            question,
+            n_simulations=body.get("n_simulations"),
+            seed=body.get("seed", 42),
+            backend=body.get("backend"),
+            model=body.get("model"),
+            _complete=_complete,
+        )
+    except LLMError as e:
+        return {"error": str(e), "backend_unavailable": True}, 503
+    return res, (200 if res["valid"] else 422)
 
 
 def save_domain(filename, data):
@@ -441,6 +421,11 @@ class Handler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
+            return
+
+        if path == "/api/ask":
+            payload, status = handle_ask(body)
+            self._json_response(payload, status)
             return
 
         if path == "/api/validate":
