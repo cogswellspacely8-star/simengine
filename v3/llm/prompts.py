@@ -108,12 +108,26 @@ def user_prompt(question, n_simulations=None):
     )
 
 
-def repair_message(errors):
+_ALLOWED_FUNCS_TEXT = ("min, max, abs, round, sum, len, int, float, sqrt, log, exp, ceil, "
+                       "floor, pow, random, gauss, binomial, clamp")
+
+
+def repair_message(errors, available=None):
     bullet = "\n".join(f"- {e}" for e in errors)
-    return (
+    msg = (
         "That config did not pass validation. Fix every problem below and return the FULL "
         "corrected JSON object (only JSON, no prose):\n" + bullet
     )
+    if available:
+        msg += (
+            "\n\nIn expressions you may reference ONLY these names you have defined: "
+            + ", ".join(available)
+            + ".\nAnd ONLY these functions: " + _ALLOWED_FUNCS_TEXT
+            + ".\nIf a metric or step references anything not in those lists, delete it or rewrite "
+            "it using only those names. Keep metrics simple — report final totals or values "
+            "(e.g. final cash, total revenue), not ratios that need a baseline."
+        )
+    return msg
 
 
 EXPLAIN_SYSTEM = (

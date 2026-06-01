@@ -12,7 +12,7 @@ import json
 
 from .backends import complete as _default_complete
 from .prompts import SYSTEM_PROMPT, user_prompt, repair_message
-from validation import validate_config
+from validation import validate_config, available_names
 
 
 def _extract_json(text):
@@ -86,7 +86,8 @@ def compile_config(question, *, n_simulations=None, max_repairs=3,
             return {"config": config, "valid": True, "attempts": attempts, "errors": []}
 
         last_errors = errors
+        avail = available_names(config) if isinstance(config, dict) else None
         messages.append({"role": "assistant", "content": text})
-        messages.append({"role": "user", "content": repair_message(errors)})
+        messages.append({"role": "user", "content": repair_message(errors, available=avail)})
 
     return {"config": config, "valid": False, "attempts": attempts, "errors": last_errors}

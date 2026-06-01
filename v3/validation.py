@@ -35,6 +35,23 @@ def _known_names(data):
     return names
 
 
+def available_names(data):
+    """The names a config defines that an expression may reference (vars,
+    accumulators, step targets, initial_state) — used to coach the repair loop."""
+    names = set()
+    for cat in ("parameters", "controls", "exogenous", "variables"):
+        if isinstance(data.get(cat), dict):
+            names.update(data[cat].keys())
+    if isinstance(data.get("accumulators"), dict):
+        names.update(data["accumulators"].keys())
+    if isinstance(data.get("initial_state"), dict):
+        names.update(data["initial_state"].keys())
+    for step in data.get("step_logic", []) or []:
+        if isinstance(step, dict) and step.get("target"):
+            names.add(step["target"])
+    return sorted(names)
+
+
 def _iter_exprs(data):
     """Yield (label, expr_string) for every expression the kernel evaluates."""
     for i, step in enumerate(data.get("step_logic", []) or []):
