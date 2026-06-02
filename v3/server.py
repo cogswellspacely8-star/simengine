@@ -6,7 +6,7 @@ Open: http://localhost:8420
 """
 
 import json, os, sys, time, copy, glob, math, statistics, re
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, ThreadingHTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -580,7 +580,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 8420
-    server = HTTPServer(("127.0.0.1", port), Handler)
+    # ThreadingHTTPServer so a slow /api/ask (local models take a while) never
+    # blocks the UI from loading or other requests from being served.
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_threads = True
     print(f"SimEngine UI running at http://localhost:{port}")
     print("Press Ctrl+C to stop")
     try:
