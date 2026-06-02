@@ -1,0 +1,27 @@
+{
+  "name": "Fed rate cuts in the rest of 2026",
+  "description": "5 remaining FOMC meetings (Jun 17, Jul 29, Sep 16, Oct 28, Dec 9). Current target midpoint 3.625% (range 3.50-3.75%). Each meeting cuts 25bps with an uncertain per-meeting probability (triangular 10/25/45% — an estimate, the key tunable assumption). Reports the distribution of total cuts and the year-end rate.",
+  "n_simulations": 20000,
+  "n_steps": 5,
+  "step_label": "meeting",
+  "seed": 42,
+  "parameters": {
+    "cut_prob": {"distribution": "triangular", "params": {"low": 0.10, "mode": 0.25, "high": 0.45}}
+  },
+  "initial_state": {"rate": 3.625, "total_cuts": 0},
+  "step_logic": [
+    {"target": "cut", "expr": "1 if random() < cut_prob else 0"}
+  ],
+  "accumulators": {
+    "total_cuts": "total_cuts + cut",
+    "rate": "rate - 0.25 * cut"
+  },
+  "metrics": {
+    "total_cuts": {"expr": "total_cuts", "format": "number"},
+    "year_end_rate_pct": {"expr": "rate", "format": "number"}
+  },
+  "context": {
+    "decision": "How many 25bps cuts will the Fed make in the rest of 2026, and where does the rate land?",
+    "assumptions": "Per-meeting cut probability triangular(0.10, 0.25, 0.45) — an estimate; refine from CME FedWatch."
+  }
+}

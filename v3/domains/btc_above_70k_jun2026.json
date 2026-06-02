@@ -1,0 +1,26 @@
+{
+  "name": "Bitcoin above $70k by June 30, 2026?",
+  "description": "Random-walk (geometric Brownian motion) model of BTC price starting at $67,190 (CoinGecko, 2026-06-02) with ~1.71% daily log-return volatility (30-day realized) over 28 days, zero drift (conservative). Resolves 2026-06-30.",
+  "n_simulations": 20000,
+  "n_steps": 28,
+  "step_label": "day",
+  "seed": 42,
+  "parameters": {
+    "daily_vol": {"distribution": "fixed", "params": {"value": 0.0171}}
+  },
+  "initial_state": {"price": 67190},
+  "step_logic": [
+    {"target": "shock", "sample": {"distribution": "normal", "params": {"mean": 0.0, "std": 0.0171}}}
+  ],
+  "accumulators": {
+    "price": "price * exp(shock)"
+  },
+  "metrics": {
+    "final_price": {"expr": "price", "format": "dollar"},
+    "pct_chance_above_70k": {"expr": "100 if price > 70000 else 0", "format": "number"}
+  },
+  "context": {
+    "decision": "What is the probability BTC closes above $70,000 by June 30, 2026?",
+    "assumptions": "Zero drift; volatility = 30-day realized (~33% annualized). Tune drift/vol to test scenarios."
+  }
+}
