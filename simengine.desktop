@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=SimEngine
+GenericName=Uncertainty Calculator
+Comment=A calculator for uncertainty — run simulations and ask questions in plain words
+Exec=/home/tony/projects/simengine/launch.sh
+Icon=accessories-calculator
+Terminal=false
+Categories=Science;
+Keywords=simulation;monte-carlo;forecast;uncertainty;prediction;simengine;
