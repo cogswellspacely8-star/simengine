@@ -202,12 +202,18 @@ def handle_llm_status(_get=None):
     installed = backends.list_ollama_models(_get=_get) if backend == "ollama" else []
     if backend == "ollama":
         default = backends.suggest_ollama_model(preferred=configured, _get=_get) or configured
+        options = installed
     else:
         default = configured
+        options = []
+        for m in [configured] + backends.KNOWN_MODELS.get(backend, []):
+            if m and m not in options:
+                options.append(m)
     return {
         "backend": backend,
         "configured_model": configured,
         "installed_models": installed,
+        "model_options": options,
         "default_model": default,
         "backends": list(backends.DEFAULT_MODELS.keys()),
     }, 200

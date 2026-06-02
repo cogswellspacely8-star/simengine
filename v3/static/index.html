@@ -2143,22 +2143,23 @@ async function loadAskModels() {
     const res = await fetch('/api/llm/status');
     const s = await res.json();
     sel.innerHTML = '';
-    if (s.backend === 'ollama' && s.installed_models && s.installed_models.length) {
-      s.installed_models.forEach(m => {
+    const opts = s.model_options || [];
+    if (opts.length) {
+      opts.forEach(m => {
         const o = document.createElement('option');
         o.value = m; o.textContent = m;
         if (m === s.default_model) o.selected = true;
         sel.appendChild(o);
       });
-      hint.textContent = 'Local models installed in Ollama. Pick one (smaller = faster).';
+      hint.textContent = (s.backend === 'ollama')
+        ? 'Local models installed in Ollama. Pick one (smaller = faster).'
+        : 'Models for the ' + s.backend + ' backend (configured on the server).';
     } else if (s.backend === 'ollama') {
       sel.innerHTML = '<option value="">(no local models found)</option>';
       hint.innerHTML = 'No Ollama models detected. Run <code>ollama pull qwen2.5</code> (or any chat model), or configure an API backend on the server.';
     } else {
-      const o = document.createElement('option');
-      o.value = s.default_model; o.textContent = s.default_model + ' (' + s.backend + ')'; o.selected = true;
-      sel.appendChild(o);
-      hint.textContent = 'Using the ' + s.backend + ' backend configured on the server.';
+      sel.innerHTML = '<option value="">(no models available)</option>';
+      hint.textContent = 'No models configured for the ' + s.backend + ' backend.';
     }
   } catch (e) {
     sel.innerHTML = '<option value="">(could not reach server)</option>';

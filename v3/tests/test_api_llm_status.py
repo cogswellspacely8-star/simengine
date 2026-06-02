@@ -29,6 +29,8 @@ class TestLlmStatus(unittest.TestCase):
         # qwen2.5 (default) not installed -> default falls back to an installed model
         self.assertIn(payload["default_model"], ["mistral:7b-instruct", "hermes3:8b"])
         self.assertIn("deepseek", payload["backends"])
+        # the dropdown is driven by model_options; for ollama that's the installed list
+        self.assertEqual(payload["model_options"], payload["installed_models"])
 
     @mock.patch.dict(os.environ, {"SIMENGINE_LLM_MODEL": "hermes3:8b"}, clear=True)
     def test_configured_model_kept_when_installed(self):
@@ -42,6 +44,9 @@ class TestLlmStatus(unittest.TestCase):
         self.assertEqual(payload["backend"], "deepseek")
         self.assertEqual(payload["default_model"], "deepseek-chat")
         self.assertEqual(payload["installed_models"], [])
+        # the dropdown should offer the known DeepSeek models
+        self.assertIn("deepseek-chat", payload["model_options"])
+        self.assertIn("deepseek-reasoner", payload["model_options"])
 
 
 if __name__ == "__main__":

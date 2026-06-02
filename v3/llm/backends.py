@@ -26,6 +26,13 @@ DEFAULT_MODELS = {
     "deepseek": "deepseek-chat",
 }
 
+# Known model choices for API backends (Ollama is discovered live via /api/tags).
+KNOWN_MODELS = {
+    "deepseek": ["deepseek-chat", "deepseek-reasoner"],
+    "openai": ["gpt-4o-mini", "gpt-4o", "o4-mini"],
+    "anthropic": ["claude-3-5-haiku-latest", "claude-3-5-sonnet-latest"],
+}
+
 
 class LLMError(Exception):
     """Raised when an LLM backend is unreachable, unconfigured, or misbehaves."""
