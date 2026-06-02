@@ -4,6 +4,8 @@ SimEngine is a calculator for uncertainty. You describe a decision and the thing
 
 A normal calculator answers "what is 7 times 8." SimEngine answers "if I'm not sure about five different things, how could this turn out, and how often does it go badly."
 
+**Fastest way in:** open the app and click **Ask anything** — describe your decision in plain words and the engine builds, runs, and explains the model for you. See [Ask Anything & Track Your Predictions](07-ask-and-track.md). The documents below explain what's happening underneath.
+
 ## Read in this order
 
 | # | Document | What it does |
@@ -14,6 +16,7 @@ A normal calculator answers "what is 7 times 8." SimEngine answers "if I'm not s
 | 4 | [Who It Is For (and Why)](04-who-its-for.md) | The decisions this fits, the decisions it doesn't, and how to tell which one you've got. |
 | 5 | [Explaining It to Others (Pitch Kit)](05-explaining-it-to-others.md) | The words to use when you walk into a room and have to explain it fast. |
 | 6 | [Model Your Own Decision](06-model-your-own.md) | Write your own model from scratch, built up from the smallest working example. |
+| 7 | [Ask Anything & Track Your Predictions](07-ask-and-track.md) | The no-JSON shortcut: ask in plain words, get a model + answer, and keep a scored track record of your forecasts. |
 
 Keep the [Glossary](glossary.md) open in a tab. Every term in the guide is defined there in plain language, with a short note on why it matters.
 

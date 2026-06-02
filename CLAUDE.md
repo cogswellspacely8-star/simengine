@@ -51,16 +51,17 @@ v3/                        ALL production code lives here
   server.py                HTTP server + all API endpoints
   bayesian.py              Conjugate prior updates
   diagnostics.py           Convergence, sensitivity, AST evaluator
-  calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger
-  validation.py            Canonical config validation (shared by server + llm compiler)
+  calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger (wired to /api/forecast|resolve|forecasts + the Predictions UI)
+  validation.py            Canonical config validation (shared by server + llm compiler); never raises on bad shapes
   native.py                Optional Rust loader + Python fallback glue
   mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)
   sim_ask.py               CLI: ask a plain-language question -> config -> run -> explain
-  static/index.html        Vanilla SPA UI (one file)
-  domains/                 Example JSON configs (saas, real_estate, etc.)
+  static/index.html        Vanilla SPA UI (one file) — incl. Ask-anything + Predictions modals
+  domains/                 Example JSON configs (saas, real_estate, nba_finals_2026, btc, fed, etc.)
+  schema/                  domain.schema.json — published JSON Schema, served at GET /api/schema
   feeds/                   OPT-IN real-time data adapters (Polymarket Gamma); stdlib urllib only
-  llm/                     OPT-IN natural-language front door (backends, compiler, explain, ask); stdlib urllib only
-  tests/                   unittest suites
+  llm/                     OPT-IN natural-language front door (backends, compiler, clarify, explain, ask); stdlib urllib only
+  tests/                   unittest suites (200+; jsonschema contract test skips if lib absent)
 crates/
   simengine-core/          Pure Rust numeric kernels
   simengine-py/            PyO3 bridge (module: simengine_native)
@@ -102,4 +103,8 @@ Makefile                   Targets: venv, native-install, native-check, native-t
 - `SIMENGINE_LLM_TIMEOUT` — per-request seconds (default 120; raise for slow local models)
 - `OLLAMA_HOST` (default `http://localhost:11434`)
 - `OPENAI_API_KEY`, `OPENAI_BASE_URL` (default `https://api.openai.com/v1`; the base URL also covers llama.cpp / LM Studio / vLLM)
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY`, `DEEPSEEK_API_KEY`
+- `SIMENGINE_OLLAMA_KEEP_ALIVE` (default `30m`; warm-start so the model isn't reloaded each call) and `SIMENGINE_OLLAMA_NUM_GPU` (force layer offload)
+- `SIMENGINE_LEDGER_DB` (calibration ledger sqlite path; default `v3/forecasts.db`, gitignored)
+
+Note: the server runs on `ThreadingHTTPServer` so a slow `/api/ask` never blocks the UI. If local LLM calls are slow, check that Ollama is actually using the GPU (`ollama ps` should not show 100% CPU) — a boot-race can leave it CPU-only until `systemctl restart ollama`.
