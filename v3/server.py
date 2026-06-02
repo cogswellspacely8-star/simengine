@@ -186,11 +186,13 @@ def handle_ask(body, _complete=None):
             seed=body.get("seed", 42),
             backend=body.get("backend"),
             model=body.get("model"),
+            clarify=body.get("clarify", True),
             _complete=_complete,
         )
     except LLMError as e:
         return {"error": str(e), "backend_unavailable": True}, 503
-    return res, (200 if res["valid"] else 422)
+    ok = res.get("valid") or res.get("needs_clarification")
+    return res, (200 if ok else 422)
 
 
 def handle_llm_status(_get=None):

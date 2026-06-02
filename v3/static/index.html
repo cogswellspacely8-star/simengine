@@ -2188,6 +2188,11 @@ async function runAsk() {
       out.innerHTML = `<div style="margin-top:12px;padding:12px;border-radius:8px;background:#3a1f1f;color:#ffb3b3">${askEsc(data.error || 'Could not build a model for that question. Try rephrasing.')}</div>${extra}`;
       return;
     }
+    if (data.needs_clarification) {
+      askLastConfig = null;
+      out.innerHTML = renderClarify(data);
+      return;
+    }
     askLastConfig = data.config;
     out.innerHTML = renderAsk(data);
   } catch (e) {
@@ -2195,6 +2200,15 @@ async function runAsk() {
   } finally {
     btn.disabled = false; btn.textContent = 'Ask SimEngine';
   }
+}
+
+function renderClarify(data) {
+  const qs = (data.questions || []).map(q => `<li style="margin:4px 0">${askEsc(q)}</li>`).join('');
+  return `<div style="margin-top:14px;padding:12px;border-radius:8px;background:#1f2a3a;border:1px solid #2a6f8f">
+    <div style="font-weight:600;margin-bottom:6px">A bit more detail will make this accurate</div>
+    <div style="opacity:.85;margin-bottom:8px">Your question is open-ended, so the model would have to invent the numbers. Add these to your question and ask again:</div>
+    <ul style="margin:0 0 0 18px">${qs}</ul>
+  </div>`;
 }
 
 function renderAsk(data) {

@@ -65,6 +65,8 @@ def main(argv=None, _complete=None):
     p.add_argument("--save", metavar="NAME", default=None,
                    help="Save the generated config to domains/NAME.json")
     p.add_argument("--show-config", action="store_true", help="Print the generated config")
+    p.add_argument("--no-clarify", action="store_true", dest="no_clarify",
+                   help="Skip the clarifying-question pre-check and model it directly")
     p.add_argument("--json", action="store_true", dest="as_json", help="Machine-readable output")
     args = p.parse_args(argv)
 
@@ -75,11 +77,21 @@ def main(argv=None, _complete=None):
         res = answer_question(
             args.question, n_simulations=args.n, seed=args.seed,
             max_repairs=args.max_repairs, backend=args.backend, model=args.model,
-            _complete=_complete,
+            clarify=not args.no_clarify, _complete=_complete,
         )
     except LLMError as e:
         print(f"\nLLM backend error: {e}", file=sys.stderr)
         return 2
+
+    if res.get("needs_clarification"):
+        if args.as_json:
+            print(json.dumps(res, default=str))
+        else:
+            print("\nI need a bit more detail to model that well:")
+            for q in res["questions"]:
+                print(f"  - {q}")
+            print("\nAdd those details and ask again.")
+        return 0
 
     if not res["valid"]:
         if args.as_json:

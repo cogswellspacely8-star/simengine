@@ -131,25 +131,57 @@ def repair_message(errors, available=None):
     return msg
 
 
-EXPLAIN_SYSTEM = (
-    "You explain the results of a Monte Carlo simulation to the person who asked the original "
-    "question. Answer their question directly and in plain language. Use ONLY the numbers you are "
-    "given — never invent figures. Lead with the bottom line, then the likely range (p10 to p90), "
-    "then the risks (the safety checks and the worst cases). Be honest about uncertainty. This is "
-    "decision support, not financial advice. Keep it to a few short paragraphs; no markdown headers."
+CLARIFY_SYSTEM = (
+    "You decide whether a question has enough concrete detail to build a useful Monte Carlo "
+    "decision model. READY means it names the quantities involved and at least rough numbers, "
+    "ranges, odds, or a timeframe to work from. NOT READY means it is vague with no numbers or "
+    "scope (e.g. 'will I win?', 'should I invest?', 'is this a good idea?'). If NOT ready, give up "
+    "to 3 short, specific questions that would make it modelable — ask for the key numbers, odds, "
+    "amounts, or timeframe. Do not be pedantic: if a reasonable model can be built, say ready. "
+    "Return ONLY JSON: {\"ready\": true|false, \"questions\": [\"...\"]}."
 )
 
 
-def explain_user_prompt(question, results):
+def clarify_user_prompt(question):
+    return f"Question:\n\"{question}\"\n\nReturn the JSON verdict."
+
+
+EXPLAIN_SYSTEM = (
+    "You explain the results of a Monte Carlo simulation to the person who asked the original "
+    "question. Use ONLY the numbers you are given — never invent figures. This is decision support, "
+    "not financial advice. Keep it to a few short paragraphs; no markdown headers.\n"
+    "STRUCTURE your answer:\n"
+    "1. FIRST, in one sentence, state the key assumptions the model used — the input ranges and any "
+    "value the question did NOT specify (e.g. 'I assumed a ~50% chance per attempt over 100 attempts, "
+    "since you didn't say') — so the reader can correct them.\n"
+    "2. Then the bottom-line answer to their question.\n"
+    "3. Then the likely range (p10 to p90) and the risks (safety checks, worst cases).\n"
+    "Be honest about uncertainty."
+)
+
+
+def _input_assumptions(config):
+    if not isinstance(config, dict):
+        return {}
+    return {cat: config[cat] for cat in ("parameters", "controls", "exogenous")
+            if isinstance(config.get(cat), dict) and config[cat]}
+
+
+def explain_user_prompt(question, results, config=None):
+    payload = {
+        "stats": results.get("stats", {}),
+        "safety": results.get("safety", {}),
+        "narrative": results.get("narrative", ""),
+        "n_simulations": results.get("n_simulations"),
+    }
+    inputs = _input_assumptions(config)
+    extra = ("\n\nThe model's INPUTS (these are the assumptions to state and let the reader correct):\n"
+             + json.dumps(inputs, default=str)) if inputs else ""
     return (
         f"The person asked:\n\"{question}\"\n\n"
         "Here are the simulation results (JSON: per-metric stats with median and p10/p90, plus "
         "safety pass/fail and a plain narrative):\n\n"
-        + json.dumps({
-            "stats": results.get("stats", {}),
-            "safety": results.get("safety", {}),
-            "narrative": results.get("narrative", ""),
-            "n_simulations": results.get("n_simulations"),
-        }, default=str)
-        + "\n\nWrite the answer to their question, grounded only in these numbers."
+        + json.dumps(payload, default=str)
+        + extra
+        + "\n\nWrite the answer to their question, grounded only in these numbers, opening with the assumptions."
     )

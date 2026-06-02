@@ -120,6 +120,9 @@ def validate_config(data):
         if data.get(cat) and isinstance(data[cat], dict):
             has_vars = True
             for vname, vdef in data[cat].items():
+                if not isinstance(vdef, dict):
+                    errors.append(f"Variable '{vname}' must be an object like {{\"distribution\": ..., \"params\": {{...}}}}, got {type(vdef).__name__}. (Constants need {{\"distribution\": \"fixed\", \"params\": {{\"value\": N}}}}.)")
+                    continue
                 dist = vdef.get("distribution")
                 if dist not in SAMPLERS:
                     errors.append(f"Variable '{vname}': unknown distribution '{dist}'. Available: {', '.join(SAMPLERS.keys())}")
@@ -130,8 +133,13 @@ def validate_config(data):
 
     if not data.get("step_logic"):
         errors.append("Missing 'step_logic' (at least one computation step needed)")
+    elif not isinstance(data["step_logic"], list):
+        errors.append("'step_logic' must be a list of steps, each an object with 'target' and 'expr'")
     else:
         for i, step in enumerate(data["step_logic"]):
+            if not isinstance(step, dict):
+                errors.append(f"step_logic[{i}] must be an object with 'target' and 'expr', got {type(step).__name__}")
+                continue
             if not step.get("target"):
                 errors.append(f"step_logic[{i}]: missing 'target'")
             if not step.get("expr") and not step.get("sample"):

@@ -42,7 +42,7 @@ def raising(messages, *, json_mode=False, backend=None, model=None):
 class TestApiAsk(unittest.TestCase):
     def test_valid_question_returns_answer(self):
         payload, status = server.handle_ask(
-            {"question": "a coin flip game", "seed": 42},
+            {"question": "a coin flip game", "seed": 42, "clarify": False},
             _complete=FakeLLM([GOOD_JSON, "Most games break even."]),
         )
         self.assertEqual(status, 200)
@@ -56,17 +56,28 @@ class TestApiAsk(unittest.TestCase):
         self.assertIn("error", payload)
 
     def test_backend_unavailable_is_503(self):
-        payload, status = server.handle_ask({"question": "coin flip"}, _complete=raising)
+        payload, status = server.handle_ask({"question": "coin flip", "clarify": False}, _complete=raising)
         self.assertEqual(status, 503)
         self.assertIn("error", payload)
 
     def test_unbuildable_config_is_422(self):
         payload, status = server.handle_ask(
-            {"question": "bad"},
+            {"question": "bad", "clarify": False},
             _complete=FakeLLM([BAD_JSON, BAD_JSON, BAD_JSON, BAD_JSON]),
         )
         self.assertEqual(status, 422)
         self.assertFalse(payload["valid"])
+
+    def test_vague_question_returns_clarification_200(self):
+        import json as _json
+        not_ready = _json.dumps({"ready": False, "questions": ["Win what?", "What odds?"]})
+        payload, status = server.handle_ask(
+            {"question": "will I win"},  # clarify defaults on
+            _complete=FakeLLM([not_ready]),
+        )
+        self.assertEqual(status, 200)
+        self.assertTrue(payload["needs_clarification"])
+        self.assertTrue(payload["questions"])
 
 
 if __name__ == "__main__":

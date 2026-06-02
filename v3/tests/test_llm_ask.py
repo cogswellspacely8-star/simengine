@@ -39,7 +39,7 @@ class FakeLLM:
 class TestAnswerQuestion(unittest.TestCase):
     def test_happy_path(self):
         fake = FakeLLM([GOOD_JSON, "Most games end near break-even."])
-        res = ask.answer_question("a coin flip game", seed=42, _complete=fake)
+        res = ask.answer_question("a coin flip game", seed=42, clarify=False, _complete=fake)
         self.assertTrue(res["valid"])
         self.assertEqual(res["config"]["name"], "Coin Flip")
         self.assertIn("final_bankroll", res["results"]["stats"])
@@ -48,7 +48,7 @@ class TestAnswerQuestion(unittest.TestCase):
 
     def test_runs_real_simulation_numbers(self):
         fake = FakeLLM([GOOD_JSON, "explained"])
-        res = ask.answer_question("coin flip", seed=42, _complete=fake)
+        res = ask.answer_question("coin flip", seed=42, clarify=False, _complete=fake)
         stats = res["results"]["stats"]["final_bankroll"]
         # Fair coin over 10 flips: median ~0, symmetric.
         self.assertEqual(stats["median"], 0.0)
@@ -56,7 +56,7 @@ class TestAnswerQuestion(unittest.TestCase):
 
     def test_invalid_config_reports_without_running(self):
         fake = FakeLLM([BAD_JSON, BAD_JSON, BAD_JSON, BAD_JSON])
-        res = ask.answer_question("bad", max_repairs=3, _complete=fake)
+        res = ask.answer_question("bad", max_repairs=3, clarify=False, _complete=fake)
         self.assertFalse(res["valid"])
         self.assertIsNone(res["results"])
         self.assertTrue(res["errors"])
@@ -65,7 +65,7 @@ class TestAnswerQuestion(unittest.TestCase):
         cfg = dict(GOOD)
         cfg["n_simulations"] = 999
         fake = FakeLLM([json.dumps(cfg), "explained"])
-        res = ask.answer_question("coin flip", n_simulations=300, seed=1, _complete=fake)
+        res = ask.answer_question("coin flip", n_simulations=300, seed=1, clarify=False, _complete=fake)
         self.assertEqual(res["results"]["n_simulations"], 300)
 
 
