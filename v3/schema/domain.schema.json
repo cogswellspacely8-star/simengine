@@ -1,0 +1,418 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simengine.dev/schema/v3/domain.schema.json",
+  "title": "SimEngine v3 Domain Config",
+  "description": "Machine-readable contract for a SimEngine v3 domain configuration. Mirrors the engine's validate_config / DomainConfig / kernel rules exactly. Required at the top level: name, n_steps, step_logic, metrics, and AT LEAST ONE non-empty variable category (parameters, controls, exogenous, or variables). All other fields are optional; DomainConfig supplies defaults the validator does not enforce. Expression strings are intentionally under-constrained here because the engine performs its own static name-resolution and a live 10-iteration test run during validation.",
+  "type": "object",
+
+  "required": ["name", "n_steps", "step_logic", "metrics"],
+  "anyOf": [
+    { "required": ["parameters"] },
+    { "required": ["controls"] },
+    { "required": ["exogenous"] },
+    { "required": ["variables"] }
+  ],
+
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Domain name. Required: validate_config rejects a falsy/empty value ('Missing name field'). DomainConfig defaults to 'unnamed' but validation makes it mandatory."
+    },
+    "n_steps": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Number of simulation steps along the time axis. Must be a positive integer ('n_steps must be a positive integer'). DomainConfig default is 12 but validation requires it present and valid."
+    },
+    "n_simulations": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monte Carlo run count. DomainConfig default 5000. Not enforced by validate_config."
+    },
+    "description": {
+      "type": "string",
+      "description": "Free-text description. DomainConfig default ''."
+    },
+    "step_label": {
+      "type": "string",
+      "description": "Time-axis unit label (e.g. 'month', 'week', 'sprint'). DomainConfig default 'step'."
+    },
+    "seed": {
+      "type": ["integer", "null"],
+      "description": "Random seed. May be null. DomainConfig default None."
+    },
+
+    "metrics": {
+      "type": "object",
+      "minProperties": 1,
+      "description": "Required, non-empty map of metricName -> Metric. ('Missing metrics' if absent or empty.) Each metric's expr is evaluated by the kernel and its statistics ({metric}_{stat}) are referenced by fitness components.",
+      "additionalProperties": { "$ref": "#/$defs/Metric" }
+    },
+
+    "step_logic": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Required, non-empty ordered list of per-step update rules ('Missing step_logic'). Each item targets a state name and provides either an expr or an inline sample. If both are present the kernel uses expr.",
+      "items": { "$ref": "#/$defs/StepLogicItem" }
+    },
+
+    "parameters": {
+      "type": "object",
+      "description": "Variable category: uncertain inputs. Map of name -> Variable. Counts toward the at-least-one-category requirement when non-empty.",
+      "additionalProperties": { "$ref": "#/$defs/Variable" }
+    },
+    "controls": {
+      "type": "object",
+      "description": "Variable category: operator/decision levers (often tunable). Map of name -> Variable. Counts toward the at-least-one-category requirement when non-empty.",
+      "additionalProperties": { "$ref": "#/$defs/Variable" }
+    },
+    "exogenous": {
+      "type": "object",
+      "description": "Variable category: external shocks outside operator control. Map of name -> Variable. Counts toward the at-least-one-category requirement when non-empty.",
+      "additionalProperties": { "$ref": "#/$defs/Variable" }
+    },
+    "variables": {
+      "type": "object",
+      "description": "Legacy/backward-compat variable category, still accepted: validate_config counts it toward the required variable categories, and DomainConfig merges it into parameters when parameters is empty. Prefer parameters/controls/exogenous for new configs.",
+      "additionalProperties": { "$ref": "#/$defs/Variable" }
+    },
+
+    "initial_state": {
+      "type": "object",
+      "description": "Starting numeric values for accumulators / step targets. Map of name -> number. These names become valid references in expressions.",
+      "additionalProperties": { "type": "number" }
+    },
+    "accumulators": {
+      "type": "object",
+      "description": "Map of accumulatorName -> expression string, evaluated each step (running totals). Auto-initialized to 0.0 if not present in initial_state. Each value MUST be an expression string.",
+      "additionalProperties": { "type": "string" }
+    },
+
+    "safety": {
+      "type": "object",
+      "description": "Optional safety constraints. Not structurally validated by validate_config; consumed by evaluate_safety.",
+      "properties": {
+        "chance_constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/ChanceConstraint" }
+        },
+        "cvar_constraints": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/CvarConstraint" }
+        }
+      }
+    },
+
+    "fitness": {
+      "type": "object",
+      "description": "Optimizer objective. compute_fitness sums weight * eval(expr) over components. Component exprs reference metric statistics as '{metricName}_{stat}' where stat is one of mean, median, std, p10, p25, p75, p90.",
+      "required": ["components"],
+      "properties": {
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["expr"],
+            "properties": {
+              "expr": {
+                "type": "string",
+                "description": "Expression over metric statistics, e.g. 'total_revenue_median - 0.5 * cost_p90'."
+              },
+              "weight": {
+                "type": "number",
+                "description": "Multiplier for this component. Defaults to 1.0 (comp.get('weight', 1.0))."
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional human-readable label for the component."
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "tunable": {
+      "type": "array",
+      "description": "List of config paths the optimizer may mutate. Each path is split on '.' to walk into the config dict.",
+      "items": {
+        "type": "object",
+        "required": ["path", "range"],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Dot-separated path into the config, e.g. 'controls.monthly_budget.params.value'."
+          },
+          "range": {
+            "type": "array",
+            "description": "Inclusive [lo, hi] search bounds.",
+            "items": { "type": "number" },
+            "minItems": 2,
+            "maxItems": 2
+          }
+        }
+      }
+    },
+
+    "correlations": {
+      "type": "array",
+      "description": "v3.1 feature. Pairwise correlations between variables. Builds a correlation matrix + Cholesky factor; only entries with exactly two vars present in the matrix are applied. Presence of this field disables the native batch sampler.",
+      "items": {
+        "type": "object",
+        "required": ["vars", "rho"],
+        "properties": {
+          "vars": {
+            "type": "array",
+            "description": "The two variable names to correlate. Only len==2 entries are applied.",
+            "items": { "type": "string" },
+            "minItems": 2,
+            "maxItems": 2
+          },
+          "rho": {
+            "type": "number",
+            "description": "Correlation coefficient. Defaults to 0 if missing. Typically in [-1, 1].",
+            "minimum": -1,
+            "maximum": 1
+          }
+        }
+      }
+    },
+
+    "calibration": {
+      "type": "object",
+      "description": "Top-level calibration metadata (DomainConfig reads data.get('calibration')). In practice calibration is usually attached PER-VARIABLE inside each variable def rather than here."
+    },
+
+    "context": {
+      "type": "object",
+      "description": "Optional metadata (decision question, key levers, etc.). Passed through in API responses; not read by DomainConfig or validate_config."
+    },
+
+    "_guide": {
+      "type": "object",
+      "description": "Documentation-only field present in _template.json (schema/distribution/expression/safety hints). Ignored by the engine."
+    }
+  },
+
+  "$defs": {
+    "Variable": {
+      "type": "object",
+      "description": "A variable definition (used in parameters / controls / exogenous / variables, and as an inline step_logic 'sample'). Requires a 'distribution' from the SAMPLERS registry and a non-empty 'params' object. params values may be numeric literals OR a string starting with '$' (a late-binding reference resolved to state.get(name, 0) at sample time).",
+      "additionalProperties": false,
+      "required": ["distribution", "params"],
+      "properties": {
+        "distribution": {
+          "type": "string",
+          "description": "One of the SAMPLERS registry keys. Note: 'correlated_normal' from the README table is NOT a registered sampler and would be rejected as an unknown distribution; use the top-level 'correlations' array instead.",
+          "enum": [
+            "fixed",
+            "uniform",
+            "triangular",
+            "normal",
+            "lognormal",
+            "bernoulli",
+            "poisson",
+            "student_t"
+          ]
+        },
+        "params": {
+          "type": "object",
+          "minProperties": 1,
+          "description": "Distribution parameters. Required and non-empty ('missing params'). Per-distribution required/optional keys are enforced by the allOf/if-then rules on this Variable. Each value is a number or a '$name' late-binding reference string.",
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "number" },
+              {
+                "type": "string",
+                "pattern": "^\\$",
+                "description": "Late-binding reference, e.g. '$current_price'. Resolved to state.get('current_price', 0) at sample time."
+              }
+            ]
+          }
+        },
+        "calibration": {
+          "type": "object",
+          "description": "Optional per-variable calibration metadata (e.g. observed data, posterior bookkeeping). Not structurally validated by validate_config."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "distribution": { "const": "fixed" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "required": ["value"],
+                "properties": {
+                  "value": {
+                    "oneOf": [
+                      { "type": "number" },
+                      { "type": "string", "pattern": "^\\$" }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "uniform" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["low", "high"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "triangular" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["low", "high", "mode"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "normal" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["mean", "std"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "lognormal" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["median", "spread"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "bernoulli" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["p"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "poisson" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["lambda"] }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "student_t" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "description": "student_t has NO strictly-required params; all have kernel defaults (df=5, mean=0, scale=1) and optional clamps (min, max). 'params' itself must still be a non-empty object per validate_config."
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "StepLogicItem": {
+      "type": "object",
+      "description": "One per-step update rule. Requires a truthy 'target' state name and EXACTLY ONE OF 'expr' or 'sample'. ('step_logic[i]: missing target' / 'step_logic[i]: missing expr or sample'.) If both are supplied the kernel evaluates 'expr' (it checks 'expr' first).",
+      "required": ["target"],
+      "properties": {
+        "target": {
+          "type": "string",
+          "minLength": 1,
+          "description": "State name to assign each step. Becomes a valid expression reference."
+        },
+        "expr": {
+          "type": "string",
+          "description": "Expression string evaluated each step to produce the target's value. Allowed names: SAFE_BUILTINS, True/False/None, _step, all variable names, accumulator names, initial_state keys, and step_logic targets. No lambdas, comprehensions, or dotted attribute access."
+        },
+        "sample": {
+          "$ref": "#/$defs/Variable",
+          "description": "Inline variable definition sampled each step (alternative to expr)."
+        }
+      },
+      "oneOf": [
+        { "required": ["expr"] },
+        { "required": ["sample"] }
+      ]
+    },
+
+    "Metric": {
+      "type": "object",
+      "description": "A reported output metric. The kernel evaluates eval_expr(expr); statistics ({metric}_{stat}) are derived for fitness and reporting.",
+      "additionalProperties": false,
+      "required": ["expr"],
+      "properties": {
+        "expr": {
+          "type": "string",
+          "description": "Expression string evaluated to produce the metric value (subject to the same expression name rules as step_logic)."
+        },
+        "format": {
+          "type": "string",
+          "description": "Display format hint used by the UI/printer. Defaults to 'number' in _metric_formats.",
+          "enum": ["number", "dollar", "percent"]
+        }
+      }
+    },
+
+    "ChanceConstraint": {
+      "type": "object",
+      "description": "Probabilistic constraint on a metric. All four keys are accessed directly (no .get) in _evaluate_safety_python, so they are effectively required when the constraint is present. 'below' counts outcomes v < threshold; any other condition value counts v > threshold.",
+      "required": ["metric", "condition", "threshold", "max_prob"],
+      "properties": {
+        "metric": {
+          "type": "string",
+          "description": "Name of the metric to evaluate."
+        },
+        "condition": {
+          "type": "string",
+          "enum": ["below", "above"],
+          "description": "'below' counts v < threshold; otherwise counts v > threshold."
+        },
+        "threshold": {
+          "type": "number",
+          "description": "Comparison threshold."
+        },
+        "max_prob": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Maximum allowed probability of violating the threshold (0..1)."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Optional explanation."
+        }
+      }
+    },
+
+    "CvarConstraint": {
+      "type": "object",
+      "description": "Conditional Value-at-Risk constraint. metric/alpha/min_cvar are accessed directly (effectively required). CVaR = mean of the worst (lowest) alpha-fraction of outcomes; passes if actual_cvar >= min_cvar.",
+      "required": ["metric", "alpha", "min_cvar"],
+      "properties": {
+        "metric": {
+          "type": "string",
+          "description": "Name of the metric to evaluate."
+        },
+        "alpha": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 1,
+          "description": "Tail fraction, e.g. 0.10 for the worst 10% of outcomes."
+        },
+        "min_cvar": {
+          "type": "number",
+          "description": "Minimum acceptable CVaR; the constraint passes when actual_cvar >= min_cvar."
+        },
+        "rationale": {
+          "type": "string",
+          "description": "Optional explanation."
+        }
+      }
+    }
+  }
+}

@@ -126,6 +126,8 @@ v3/
 
 A domain config is a single JSON file that fully describes the simulation. The v3 schema separates variables into three semantic categories, which matters for Bayesian updating and optimization.
 
+**Published contract:** the machine-readable [JSON Schema](v3/schema/domain.schema.json) (Draft 2020-12) is served live at `GET /api/schema` — hand it to any AI to author a valid config in one shot. A plain-language field reference is in [`docs/schema-reference.md`](docs/schema-reference.md). The schema is verified against every shipped domain in the test suite.
+
 ### Top-Level Fields
 
 | Field | Type | Description |

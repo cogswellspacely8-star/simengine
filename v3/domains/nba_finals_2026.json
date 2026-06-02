@@ -1,0 +1,81 @@
+{
+  "name": "2026 NBA Finals — Spurs vs Knicks (Best-of-7)",
+  "description": "Monte Carlo model of the 2026 NBA Finals: San Antonio Spurs vs New York Knicks, best-of-7, series tied 0-0, Game 1 on June 3, 2026. Each game is a weighted coin (Bernoulli) for a Spurs win. Home-court advantage follows the 2-2-1-1-1 venue pattern: Games 1, 2, 5, 7 in San Antonio (Spurs home); Games 3, 4, 6 in New York (Spurs road). Spurs win ~63.9% at home and ~46% on the road (both tunable parameters). First team to 4 wins takes the series; a series_over guard freezes the result once a team reaches 4 wins so the remaining (already-decided) games cannot change the winner, even though the kernel runs all 7 steps. DECISION-SUPPORT ONLY — this is a calibrated scenario model for reasoning about uncertainty, NOT betting advice or a wagering signal.",
+  "n_simulations": 50000,
+  "n_steps": 7,
+  "step_label": "game",
+  "seed": 42,
+
+  "context": {
+    "decision_question": "How likely are the Spurs to win the 2026 NBA Finals, and how long is the series likely to last?",
+    "venue_pattern": "2-2-1-1-1: Games 1,2,5,7 at San Antonio; Games 3,4,6 at New York",
+    "key_levers": [
+      "parameters.p_road_win.params.value — Spurs road win probability (most uncertain input; tune to test sensitivity)",
+      "parameters.p_home_win.params.value — Spurs home win probability"
+    ],
+    "safety_note": "Decision-support model for reasoning under uncertainty. NOT betting advice, NOT a wagering signal, NOT a prediction of any single game. Probabilities are illustrative estimates."
+  },
+
+  "parameters": {
+    "p_home_win": {
+      "distribution": "fixed",
+      "params": {"value": 0.639},
+      "calibration": {
+        "source": "Estimated Spurs single-game win probability when playing at home in San Antonio (Games 1, 2, 5, 7).",
+        "updatable": true,
+        "update_method": "Beta-Binomial after observing actual home-game outcomes."
+      }
+    },
+    "p_road_win": {
+      "distribution": "fixed",
+      "params": {"value": 0.46},
+      "calibration": {
+        "source": "Estimated Spurs single-game win probability when playing on the road in New York (Games 3, 4, 6). Most uncertain input — explicitly tunable.",
+        "updatable": true,
+        "update_method": "Beta-Binomial after observing actual road-game outcomes."
+      }
+    }
+  },
+
+  "initial_state": {
+    "spurs_wins": 0,
+    "knicks_wins": 0,
+    "games_count": 0,
+    "series_over": 0,
+    "game1_spurs_win": 0
+  },
+
+  "step_logic": [
+    {"target": "is_home",        "expr": "1 if (_step == 1 or _step == 2 or _step == 5 or _step == 7) else 0"},
+    {"target": "win_prob",       "expr": "p_home_win if is_home == 1 else p_road_win"},
+    {"target": "series_decided", "expr": "1 if (spurs_wins >= 4 or knicks_wins >= 4) else 0"},
+    {"target": "game_played",    "expr": "0 if series_decided == 1 else 1"},
+    {"target": "game_spurs_win", "expr": "0 if series_decided == 1 else (1 if random() < win_prob else 0)"},
+    {"target": "game_knicks_win","expr": "1 if (game_played == 1 and game_spurs_win == 0) else 0"}
+  ],
+
+  "accumulators": {
+    "spurs_wins":      "spurs_wins + game_spurs_win",
+    "knicks_wins":     "knicks_wins + game_knicks_win",
+    "games_count":     "games_count + game_played",
+    "series_over":     "1 if (spurs_wins >= 4 or knicks_wins >= 4) else 0",
+    "game1_spurs_win": "game_spurs_win if _step == 1 else game1_spurs_win"
+  },
+
+  "metrics": {
+    "spurs_series_win": {"expr": "1 if spurs_wins >= 4 else 0",  "format": "percent"},
+    "games_played":     {"expr": "games_count",                  "format": "number"},
+    "game1_spurs_win":  {"expr": "game1_spurs_win",              "format": "percent"}
+  },
+
+  "fitness": {
+    "components": [
+      {"expr": "spurs_series_win_mean * 100", "weight": 1.0, "name": "spurs_series_win_pct"}
+    ]
+  },
+
+  "tunable": [
+    {"path": "parameters.p_home_win.params.value", "range": [0.50, 0.80]},
+    {"path": "parameters.p_road_win.params.value", "range": [0.30, 0.60]}
+  ]
+}

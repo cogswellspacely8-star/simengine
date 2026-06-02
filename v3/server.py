@@ -195,6 +195,16 @@ def handle_ask(body, _complete=None):
     return res, (200 if ok else 422)
 
 
+def handle_schema():
+    """Serve the published JSON Schema for the domain config (the contract)."""
+    path = os.path.join(os.path.dirname(__file__), "schema", "domain.schema.json")
+    try:
+        with open(path) as f:
+            return json.load(f), 200
+    except Exception as e:
+        return {"error": f"schema unavailable: {e}"}, 404
+
+
 def handle_llm_status(_get=None):
     """Report the LLM backend and (for Ollama) which models are installed,
     so the UI can offer a model picker. Returns (payload, status)."""
@@ -354,6 +364,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/domains":
             self._json_response(list_domains())
+            return
+
+        if path == "/api/schema":
+            payload, status = handle_schema()
+            self._json_response(payload, status)
             return
 
         if path == "/api/llm/status":
