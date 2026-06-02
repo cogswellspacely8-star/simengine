@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS forecasts (
     metric         TEXT,
     samples_json   TEXT,
     created_at     TEXT NOT NULL,
+    resolve_by     TEXT,
     resolved_at    TEXT,
     outcome        INTEGER
 );
@@ -108,20 +109,28 @@ class CalibrationLedger:
         self.conn.commit()
 
     def record(self, question, predicted_prob, *, config_hash=None,
-               metric=None, samples=None, created_at=None):
-        """Log a forecast. Returns its integer id (use it to resolve later)."""
+               metric=None, samples=None, created_at=None, resolve_by=None):
+        """Log a forecast. Returns its integer id (use it to resolve later).
+
+        resolve_by: optional ISO date string for when the outcome is known.
+        """
         if not 0.0 <= predicted_prob <= 1.0:
             raise ValueError("predicted_prob must be in [0, 1]")
         samples_json = json.dumps(list(samples)) if samples is not None else None
         cur = self.conn.execute(
             "INSERT INTO forecasts "
-            "(question, predicted_prob, config_hash, metric, samples_json, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "(question, predicted_prob, config_hash, metric, samples_json, created_at, resolve_by) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (question, predicted_prob, config_hash, metric, samples_json,
-             created_at or _utcnow()),
+             created_at or _utcnow(), resolve_by),
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def all_forecasts(self):
+        """Every forecast (pending and resolved), oldest first."""
+        rows = self.conn.execute("SELECT * FROM forecasts ORDER BY id").fetchall()
+        return [dict(r) for r in rows]
 
     def resolve(self, forecast_id, outcome, *, resolved_at=None):
         """Record the realized binary outcome (0 or 1) for a logged forecast."""

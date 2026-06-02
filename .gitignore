@@ -12,3 +12,7 @@ evolution_results.json
 .pytest_cache/
 target/
 .venv/
+
+# calibration ledger (local data)
+forecasts.db
+*.db

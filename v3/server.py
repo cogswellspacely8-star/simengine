@@ -205,6 +205,54 @@ def handle_schema():
         return {"error": f"schema unavailable: {e}"}, 404
 
 
+def _ledger():
+    from calibration import CalibrationLedger
+    db = os.environ.get("SIMENGINE_LEDGER_DB", os.path.join(os.path.dirname(__file__), "forecasts.db"))
+    return CalibrationLedger(db)
+
+
+def handle_forecast_record(body):
+    """Log a forecast (predicted probability of a future binary outcome)."""
+    question = (body.get("question") or "").strip()
+    if not question:
+        return {"error": "Provide 'question'"}, 400
+    try:
+        prob = float(body.get("predicted_prob"))
+    except (TypeError, ValueError):
+        return {"error": "Provide numeric 'predicted_prob' in [0, 1]"}, 400
+    if not 0.0 <= prob <= 1.0:
+        return {"error": "predicted_prob must be in [0, 1]"}, 400
+    fid = _ledger().record(question, prob, metric=body.get("metric"),
+                           config_hash=body.get("config_hash"), resolve_by=body.get("resolve_by"))
+    return {"id": fid, "question": question, "predicted_prob": prob,
+            "resolve_by": body.get("resolve_by")}, 200
+
+
+def handle_resolve(body):
+    """Record the real outcome (0 or 1) for a logged forecast and return the score."""
+    fid = body.get("id")
+    if fid is None:
+        return {"error": "Provide 'id'"}, 400
+    try:
+        outcome = int(body.get("outcome"))
+    except (TypeError, ValueError):
+        return {"error": "Provide 'outcome' (0 or 1)"}, 400
+    led = _ledger()
+    try:
+        led.resolve(fid, outcome)
+    except KeyError:
+        return {"error": f"No forecast with id {fid}"}, 404
+    except ValueError as e:
+        return {"error": str(e)}, 400
+    return {"id": fid, "outcome": outcome, "score": led.score()}, 200
+
+
+def handle_forecasts_list():
+    """All logged forecasts (pending + resolved) plus the running Brier/log-loss."""
+    led = _ledger()
+    return {"forecasts": led.all_forecasts(), "score": led.score()}, 200
+
+
 def handle_llm_status(_get=None):
     """Report the LLM backend and (for Ollama) which models are installed,
     so the UI can offer a model picker. Returns (payload, status)."""
@@ -371,6 +419,11 @@ class Handler(BaseHTTPRequestHandler):
             self._json_response(payload, status)
             return
 
+        if path == "/api/forecasts":
+            payload, status = handle_forecasts_list()
+            self._json_response(payload, status)
+            return
+
         if path == "/api/llm/status":
             payload, status = handle_llm_status()
             self._json_response(payload, status)
@@ -473,6 +526,16 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/ask":
             payload, status = handle_ask(body)
+            self._json_response(payload, status)
+            return
+
+        if path == "/api/forecast":
+            payload, status = handle_forecast_record(body)
+            self._json_response(payload, status)
+            return
+
+        if path == "/api/resolve":
+            payload, status = handle_resolve(body)
             self._json_response(payload, status)
             return
 
