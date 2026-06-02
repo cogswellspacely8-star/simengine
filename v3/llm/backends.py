@@ -159,6 +159,21 @@ def _build_ollama(messages, model, temperature, json_mode):
         "stream": False,
         "options": {"temperature": temperature},
     }
+    # Warm start: keep the model resident between calls so it isn't reloaded
+    # from disk every request (the dominant latency on CPU). Default 30m; set
+    # SIMENGINE_OLLAMA_KEEP_ALIVE=-1 to pin it indefinitely.
+    keep_alive = os.environ.get("SIMENGINE_OLLAMA_KEEP_ALIVE", "30m")
+    try:
+        payload["keep_alive"] = int(keep_alive)
+    except (TypeError, ValueError):
+        payload["keep_alive"] = keep_alive
+    # Optionally force GPU offload (SIMENGINE_OLLAMA_NUM_GPU=99 = all layers).
+    num_gpu = os.environ.get("SIMENGINE_OLLAMA_NUM_GPU")
+    if num_gpu is not None:
+        try:
+            payload["options"]["num_gpu"] = int(num_gpu)
+        except ValueError:
+            pass
     if json_mode:
         payload["format"] = "json"
     return f"{host}/api/chat", {}, payload
