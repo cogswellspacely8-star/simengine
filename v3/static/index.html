@@ -1088,8 +1088,9 @@ canvas { width: 100%; display: block; }
     <div class="sidebar-section" id="domain-section">
       <div class="section-title" style="display:flex;justify-content:space-between;align-items:center">
         Domains
-        <span style="display:flex;gap:6px">
+        <span style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
           <span class="btn-add-var" onclick="openAsk()" style="font-size:10px;padding:3px 8px;background:#2a6f4b">Ask anything</span>
+          <span class="btn-add-var" onclick="openPredictions()" style="font-size:10px;padding:3px 8px;background:#3a5a8a">Predictions</span>
           <span class="btn-add-var" onclick="openWizard()" style="font-size:10px;padding:3px 8px">+ New</span>
         </span>
       </div>
@@ -2263,6 +2264,110 @@ async function saveAskDomain() {
     }
   } catch (e) {
     showToast('Save failed: ' + e, 'error');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Predictions & track record (the calibration ledger, in the browser)
+// ---------------------------------------------------------------------------
+function openPredictions() {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'pred-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) closePredictions(); };
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Predictions &amp; Track Record</h2>
+      <div class="modal-sub">Every forecast the engine has logged, and how calibrated it has been. When a real outcome is known, click Hit or Miss to grade it — your Brier score builds over time.</div>
+      <div id="pred-score" style="margin:12px 0"></div>
+      <div id="pred-list">Loading…</div>
+      <details style="margin-top:14px">
+        <summary style="cursor:pointer;opacity:.85">+ Log a prediction by hand</summary>
+        <div class="form-group" style="margin-top:8px"><label class="form-label">Question</label><input class="form-input" id="pred-q" placeholder="e.g., Will it rain here on Saturday?"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="form-label">Your probability (%)</label><input class="form-input" id="pred-p" type="number" min="0" max="100" value="50"></div>
+          <div class="form-group"><label class="form-label">Resolves by</label><input class="form-input" id="pred-by" type="date"></div>
+        </div>
+        <button class="btn btn-evolve" onclick="addPrediction()">Log it</button>
+      </details>
+      <div class="modal-actions"><button class="btn btn-compare" onclick="closePredictions()">Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  loadPredictions();
+}
+
+function closePredictions() {
+  const o = document.getElementById('pred-overlay');
+  if (o) o.remove();
+}
+
+async function loadPredictions() {
+  const scoreEl = document.getElementById('pred-score');
+  const listEl = document.getElementById('pred-list');
+  if (!listEl) return;
+  try {
+    const res = await fetch('/api/forecasts');
+    const data = await res.json();
+    const s = data.score || {};
+    if (s.n > 0) {
+      scoreEl.innerHTML = `<div style="padding:10px;border-radius:8px;background:#1f2a3a">Track record: <b>${s.n}</b> resolved &middot; Brier <b>${s.brier.toFixed(3)}</b> &middot; log-loss <b>${s.log_loss.toFixed(3)}</b> <span style="opacity:.7">(lower is better; 0.25 = always guessing 50/50)</span></div>`;
+    } else {
+      scoreEl.innerHTML = `<div style="padding:10px;border-radius:8px;background:#1f2a3a;opacity:.85">No predictions graded yet — click Hit or Miss on one below once the outcome is known, and your Brier score appears.</div>`;
+    }
+    const fc = data.forecasts || [];
+    if (!fc.length) {
+      listEl.innerHTML = '<div class="form-hint">No predictions logged yet. Run a simulation and log its result, or add one by hand below.</div>';
+      return;
+    }
+    listEl.innerHTML = '<table style="width:100%;border-collapse:collapse;font-size:13px">' +
+      '<thead><tr style="opacity:.7;text-align:left"><th style="padding:5px 6px">Prediction</th><th style="padding:5px 6px">Prob</th><th style="padding:5px 6px">Resolves</th><th style="padding:5px 6px;text-align:right">Outcome</th></tr></thead><tbody>' +
+      fc.map(f => {
+        const prob = (f.predicted_prob * 100).toFixed(0) + '%';
+        let outcome;
+        if (f.outcome === null || f.outcome === undefined) {
+          outcome = `<button class="btn-add-var" style="padding:2px 8px" onclick="resolvePrediction(${f.id},1)">Hit</button> ` +
+                    `<button class="btn-add-var" style="padding:2px 8px;background:#5a2a2a" onclick="resolvePrediction(${f.id},0)">Miss</button>`;
+        } else {
+          outcome = f.outcome ? '<span style="color:#6ee7a0;font-weight:600">Hit</span>'
+                              : '<span style="color:#ffb3b3;font-weight:600">Miss</span>';
+        }
+        return `<tr style="border-top:1px solid #2a2f3a"><td style="padding:6px">${askEsc(f.question)}</td>` +
+               `<td style="padding:6px">${prob}</td>` +
+               `<td style="padding:6px;opacity:.8">${askEsc(f.resolve_by || '—')}</td>` +
+               `<td style="padding:6px;text-align:right">${outcome}</td></tr>`;
+      }).join('') + '</tbody></table>';
+  } catch (e) {
+    listEl.innerHTML = `<div style="color:#ffb3b3">Could not load predictions: ${askEsc(String(e))}</div>`;
+  }
+}
+
+async function resolvePrediction(id, outcome) {
+  try {
+    await fetch('/api/resolve', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, outcome: outcome }),
+    });
+    loadPredictions();
+  } catch (e) {
+    showToast('Could not grade that prediction: ' + e, 'error');
+  }
+}
+
+async function addPrediction() {
+  const q = document.getElementById('pred-q').value.trim();
+  const p = parseFloat(document.getElementById('pred-p').value) / 100;
+  const by = document.getElementById('pred-by').value || null;
+  if (!q) { showToast('Enter a question first', 'error'); return; }
+  if (!(p >= 0 && p <= 1)) { showToast('Probability must be 0–100', 'error'); return; }
+  try {
+    await fetch('/api/forecast', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, predicted_prob: p, resolve_by: by }),
+    });
+    document.getElementById('pred-q').value = '';
+    loadPredictions();
+  } catch (e) {
+    showToast('Could not log that prediction: ' + e, 'error');
   }
 }
 
