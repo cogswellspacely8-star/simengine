@@ -10,16 +10,17 @@ from .backends import complete as _default_complete, LLMError
 from .prompts import EXPLAIN_SYSTEM, explain_user_prompt
 
 
-def explain_results(question, results, config=None, *, backend=None, model=None, _complete=None):
+def explain_results(question, results, config=None, coverage=None, *, backend=None, model=None, _complete=None):
     """Return a plain-language answer to `question`, grounded in `results`.
 
-    `config` (optional) lets the explainer state the assumptions the model used.
+    `config` lets the explainer state assumptions; `coverage` (the fidelity
+    verdict) forces it to disclaim what the model did not compute.
     Falls back to results["narrative"] when the LLM cannot be reached.
     """
     complete_fn = _complete or _default_complete
     messages = [
         {"role": "system", "content": EXPLAIN_SYSTEM},
-        {"role": "user", "content": explain_user_prompt(question, results, config)},
+        {"role": "user", "content": explain_user_prompt(question, results, config, coverage)},
     ]
     try:
         text = complete_fn(messages, backend=backend, model=model)

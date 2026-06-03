@@ -36,6 +36,8 @@ def _fmt(val, fmt):
 
 
 def _print_human(res):
+    if res.get("warning"):
+        print("\n*** FIDELITY WARNING: " + res["warning"] + " ***")
     print()
     print(res["explanation"])
     print("\nKey numbers:")
@@ -67,6 +69,8 @@ def main(argv=None, _complete=None):
     p.add_argument("--show-config", action="store_true", help="Print the generated config")
     p.add_argument("--no-clarify", action="store_true", dest="no_clarify",
                    help="Skip the clarifying-question pre-check and model it directly")
+    p.add_argument("--no-coverage", action="store_true", dest="no_coverage",
+                   help="Skip the fidelity/coverage check")
     p.add_argument("--json", action="store_true", dest="as_json", help="Machine-readable output")
     args = p.parse_args(argv)
 
@@ -77,7 +81,7 @@ def main(argv=None, _complete=None):
         res = answer_question(
             args.question, n_simulations=args.n, seed=args.seed,
             max_repairs=args.max_repairs, backend=args.backend, model=args.model,
-            clarify=not args.no_clarify, _complete=_complete,
+            clarify=not args.no_clarify, coverage=not args.no_coverage, _complete=_complete,
         )
     except LLMError as e:
         print(f"\nLLM backend error: {e}", file=sys.stderr)

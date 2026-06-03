@@ -146,17 +146,44 @@ def clarify_user_prompt(question):
     return f"Question:\n\"{question}\"\n\nReturn the JSON verdict."
 
 
+COVERAGE_SYSTEM = (
+    "You are a strict, skeptical auditor. You check whether a Monte Carlo simulation actually answers "
+    "the user's question, or whether it is a reduced / unfaithful model. You are given the question, the "
+    "metrics the simulation ACTUALLY computed (name -> expression), and the model's variables and step "
+    "targets. Assume the model is partial until shown otherwise.\n"
+    "- captured: specific things the question asked for that a listed metric genuinely provides.\n"
+    "- missing: outputs the question explicitly asked for that have NO matching metric, plus important "
+    "mechanisms the question described that the model clearly does not implement.\n"
+    "- fidelity: 'full' only if the metrics address the question's main asks; 'partial' if it captures "
+    "some but misses important asks; 'low' if the metrics barely relate to what was asked.\n"
+    "Be strict: if the question asks for a ratio, a probability, a specific year, several sub-questions, "
+    "or a sensitivity analysis and there is no metric for it, that is missing. Return ONLY JSON: "
+    "{\"fidelity\":\"full|partial|low\",\"captured\":[...],\"missing\":[...],\"note\":\"one short sentence\"}."
+)
+
+
+def coverage_user_prompt(question, metrics, variables, targets):
+    return (
+        f"QUESTION:\n\"{question}\"\n\n"
+        f"METRICS THE SIMULATION COMPUTED (name -> expr): {json.dumps(metrics, default=str)}\n"
+        f"MODEL VARIABLES: {json.dumps(variables, default=str)}\n"
+        f"MODEL STEP TARGETS: {json.dumps(targets, default=str)}\n\n"
+        "Audit how faithfully this simulation answers the question. Return the JSON verdict."
+    )
+
+
 EXPLAIN_SYSTEM = (
-    "You explain the results of a Monte Carlo simulation to the person who asked the original "
-    "question. Use ONLY the numbers you are given — never invent figures. This is decision support, "
-    "not financial advice. Keep it to a few short paragraphs; no markdown headers.\n"
-    "STRUCTURE your answer:\n"
-    "1. FIRST, in one sentence, state the key assumptions the model used — the input ranges and any "
-    "value the question did NOT specify (e.g. 'I assumed a ~50% chance per attempt over 100 attempts, "
-    "since you didn't say') — so the reader can correct them.\n"
-    "2. Then the bottom-line answer to their question.\n"
-    "3. Then the likely range (p10 to p90) and the risks (safety checks, worst cases).\n"
-    "Be honest about uncertainty."
+    "You explain the results of a Monte Carlo simulation to the person who asked the question. "
+    "This is decision support, not financial advice. A few short paragraphs; no markdown headers.\n"
+    "HARD RULES — breaking these is the worst thing you can do:\n"
+    "- Report ONLY quantities that appear in the metric stats you are given. NEVER invent a number, a "
+    "year, a ratio, a probability, or a percentile that is not in the data.\n"
+    "- If the question asked for something the model did NOT compute (you will be told what is missing), "
+    "say plainly 'the model did not compute X' — do NOT make up a value for it.\n"
+    "- If you are told the model is reduced/partial, OPEN by saying so clearly, so the reader knows the "
+    "answer covers only the simplified model.\n"
+    "STRUCTURE: (1) one sentence of assumptions/limits, including what was NOT modeled; (2) the bottom "
+    "line using only real metrics; (3) the likely range (p10-p90) and risks. Be honest about uncertainty."
 )
 
 
@@ -167,21 +194,31 @@ def _input_assumptions(config):
             if isinstance(config.get(cat), dict) and config[cat]}
 
 
-def explain_user_prompt(question, results, config=None):
+def explain_user_prompt(question, results, config=None, coverage=None):
+    stats = results.get("stats", {})
     payload = {
-        "stats": results.get("stats", {}),
+        "stats": stats,
         "safety": results.get("safety", {}),
         "narrative": results.get("narrative", ""),
         "n_simulations": results.get("n_simulations"),
     }
     inputs = _input_assumptions(config)
-    extra = ("\n\nThe model's INPUTS (these are the assumptions to state and let the reader correct):\n"
+    extra = ("\n\nThe model's INPUTS (assumptions to state and let the reader correct):\n"
              + json.dumps(inputs, default=str)) if inputs else ""
+    ground = ("\n\nThe ONLY quantities the simulation computed are these metrics: "
+              + json.dumps(list(stats.keys())) + ". Report nothing outside this list.")
+    cov = coverage or {}
+    missing = cov.get("missing") or []
+    cov_note = ""
+    if missing:
+        cov_note = ("\n\nThe model did NOT compute or model these things the question asked for — say so "
+                    "plainly and invent no values for them: " + json.dumps(missing, default=str))
+    if cov.get("fidelity") in ("partial", "low"):
+        cov_note += "\n\nThis is a REDUCED model — open your answer by making that clear."
     return (
         f"The person asked:\n\"{question}\"\n\n"
-        "Here are the simulation results (JSON: per-metric stats with median and p10/p90, plus "
-        "safety pass/fail and a plain narrative):\n\n"
+        "Simulation results (JSON: per-metric stats with median and p10/p90, plus safety and a narrative):\n\n"
         + json.dumps(payload, default=str)
-        + extra
-        + "\n\nWrite the answer to their question, grounded only in these numbers, opening with the assumptions."
+        + extra + ground + cov_note
+        + "\n\nWrite the answer, grounded only in the metrics above, opening with the assumptions and any reduced-model caveat."
     )

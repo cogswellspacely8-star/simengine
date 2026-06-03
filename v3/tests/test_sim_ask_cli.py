@@ -45,21 +45,21 @@ def run_cli(argv, outputs):
 
 class TestSimAskCLI(unittest.TestCase):
     def test_human_output(self):
-        code, text = run_cli(["a coin flip game", "--seed", "42", "--no-clarify"],
+        code, text = run_cli(["a coin flip game", "--seed", "42", "--no-clarify", "--no-coverage"],
                              [GOOD_JSON, "Most games end near break-even."])
         self.assertEqual(code, 0)
         self.assertIn("Most games end near break-even.", text)
         self.assertIn("Final Bankroll", text)
 
     def test_json_output_is_valid(self):
-        code, text = run_cli(["coin flip", "--json", "--no-clarify"], [GOOD_JSON, "explained"])
+        code, text = run_cli(["coin flip", "--json", "--no-clarify", "--no-coverage"], [GOOD_JSON, "explained"])
         self.assertEqual(code, 0)
         payload = json.loads(text)
         self.assertTrue(payload["valid"])
         self.assertEqual(payload["config"]["name"], "Coin Flip")
 
     def test_invalid_returns_nonzero(self):
-        code, _ = run_cli(["bad question", "--max-repairs", "1", "--no-clarify"],
+        code, _ = run_cli(["bad question", "--max-repairs", "1", "--no-clarify", "--no-coverage"],
                           [BAD_JSON, BAD_JSON])
         self.assertEqual(code, 1)
 
@@ -76,7 +76,7 @@ class TestSimAskCLI(unittest.TestCase):
         if os.path.exists(target):
             os.remove(target)
         try:
-            code, _ = run_cli(["coin flip", "--save", "cli_smoketest", "--no-clarify"],
+            code, _ = run_cli(["coin flip", "--save", "cli_smoketest", "--no-clarify", "--no-coverage"],
                               [GOOD_JSON, "explained"])
             self.assertEqual(code, 0)
             self.assertTrue(os.path.exists(target))

@@ -42,7 +42,7 @@ def raising(messages, *, json_mode=False, backend=None, model=None):
 class TestApiAsk(unittest.TestCase):
     def test_valid_question_returns_answer(self):
         payload, status = server.handle_ask(
-            {"question": "a coin flip game", "seed": 42, "clarify": False},
+            {"question": "a coin flip game", "seed": 42, "clarify": False, "coverage": False},
             _complete=FakeLLM([GOOD_JSON, "Most games break even."]),
         )
         self.assertEqual(status, 200)

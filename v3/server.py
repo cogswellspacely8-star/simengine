@@ -187,6 +187,7 @@ def handle_ask(body, _complete=None):
             backend=body.get("backend"),
             model=body.get("model"),
             clarify=body.get("clarify", True),
+            coverage=body.get("coverage", True),
             _complete=_complete,
         )
     except LLMError as e:

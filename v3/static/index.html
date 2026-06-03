@@ -2230,7 +2230,11 @@ function renderAsk(data) {
     safetyHtml = `<div style="margin-top:10px;font-weight:600;color:${ok ? '#6ee7a0' : '#ffb3b3'}">Safety: ${ok ? 'all constraints passed' : 'FAILED — there are real risks here'}</div>`;
   }
   const att = data.attempts || 1;
+  const warn = data.warning
+    ? `<div style="margin-top:12px;padding:10px;border-radius:8px;background:#3a2f1f;border:1px solid #8a6f2a;color:#ffd98a"><strong>Fidelity warning:</strong> ${askEsc(data.warning)}</div>`
+    : '';
   return `
+    ${warn}
     <div style="margin-top:14px;line-height:1.55;white-space:normal">${askEsc(data.explanation).replace(/\n/g, '<br>')}</div>
     <table style="margin-top:14px;width:100%;border-collapse:collapse;font-size:13px">
       <thead><tr style="opacity:.7;text-align:left"><th style="padding:4px 8px">Metric</th><th style="padding:4px 8px;text-align:right">Median</th><th style="padding:4px 8px;text-align:right">80% range</th></tr></thead>

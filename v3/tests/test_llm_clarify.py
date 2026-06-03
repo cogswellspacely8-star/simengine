@@ -58,7 +58,7 @@ class TestAssess(unittest.TestCase):
 class TestAnswerQuestionClarify(unittest.TestCase):
     def test_vague_question_asks_instead_of_modeling(self):
         fake = FakeLLM([NOT_READY])
-        res = ask.answer_question("will I win", clarify=True, _complete=fake)
+        res = ask.answer_question("will I win", clarify=True, coverage=False, _complete=fake)
         self.assertTrue(res["needs_clarification"])
         self.assertFalse(res["valid"])
         self.assertTrue(res["questions"])
@@ -67,7 +67,7 @@ class TestAnswerQuestionClarify(unittest.TestCase):
 
     def test_ready_question_proceeds_to_model(self):
         fake = FakeLLM([READY, GOOD_JSON, "Most games break even."])
-        res = ask.answer_question("a fair coin over 10 flips", seed=42, clarify=True, _complete=fake)
+        res = ask.answer_question("a fair coin over 10 flips", seed=42, clarify=True, coverage=False, _complete=fake)
         self.assertTrue(res["valid"])
         self.assertFalse(res["needs_clarification"])
         self.assertEqual(res["explanation"], "Most games break even.")
