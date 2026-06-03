@@ -2144,24 +2144,21 @@ async function loadAskModels() {
     const res = await fetch('/api/llm/status');
     const s = await res.json();
     sel.innerHTML = '';
-    const opts = s.model_options || [];
-    if (opts.length) {
-      opts.forEach(m => {
-        const o = document.createElement('option');
-        o.value = m; o.textContent = m;
-        if (m === s.default_model) o.selected = true;
-        sel.appendChild(o);
-      });
-      hint.textContent = (s.backend === 'ollama')
-        ? 'Local models installed in Ollama. Pick one (smaller = faster).'
-        : 'Models for the ' + s.backend + ' backend (configured on the server).';
-    } else if (s.backend === 'ollama') {
-      sel.innerHTML = '<option value="">(no local models found)</option>';
-      hint.innerHTML = 'No Ollama models detected. Run <code>ollama pull qwen2.5</code> (or any chat model), or configure an API backend on the server.';
-    } else {
+    const options = s.options || [];
+    if (!options.length) {
       sel.innerHTML = '<option value="">(no models available)</option>';
-      hint.textContent = 'No models configured for the ' + s.backend + ' backend.';
+      hint.innerHTML = 'No local models found and no API backend configured. Run <code>ollama pull qwen2.5</code>, or set an API key on the server.';
+      return;
     }
+    const def = s.default || {};
+    options.forEach(opt => {
+      const o = document.createElement('option');
+      o.value = opt.backend + '::' + opt.model;
+      o.textContent = opt.label || (opt.model + ' (' + opt.backend + ')');
+      if (opt.backend === def.backend && opt.model === def.model) o.selected = true;
+      sel.appendChild(o);
+    });
+    hint.innerHTML = 'Local (Ollama) models run free on your machine. API models (DeepSeek/OpenAI/Anthropic) are faster but need an API key set on the server — those show "needs …" above.';
   } catch (e) {
     sel.innerHTML = '<option value="">(could not reach server)</option>';
   }
@@ -2172,7 +2169,9 @@ async function runAsk() {
   if (!q) { showToast('Type a question first', 'error'); return; }
   const n = parseInt(document.getElementById('ask-n').value) || 3000;
   const seed = parseInt(document.getElementById('ask-seed').value) || 42;
-  const model = (document.getElementById('ask-model') || {}).value || undefined;
+  const sel = (document.getElementById('ask-model') || {}).value || '';
+  let backend, model = sel || undefined;
+  if (sel.indexOf('::') !== -1) { const parts = sel.split('::'); backend = parts[0]; model = parts[1]; }
   const btn = document.getElementById('ask-run-btn');
   const out = document.getElementById('ask-result');
   btn.disabled = true; btn.textContent = 'Thinking…';
@@ -2181,7 +2180,7 @@ async function runAsk() {
     const res = await fetch('/api/ask', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question: q, n_simulations: n, seed: seed, model: model }),
+      body: JSON.stringify({ question: q, n_simulations: n, seed: seed, model: model, backend: backend }),
     });
     const data = await res.json();
     if (!res.ok || data.error) {

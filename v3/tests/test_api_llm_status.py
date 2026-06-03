@@ -48,6 +48,25 @@ class TestLlmStatus(unittest.TestCase):
         self.assertIn("deepseek-chat", payload["model_options"])
         self.assertIn("deepseek-reasoner", payload["model_options"])
 
+    @mock.patch.dict(os.environ, {}, clear=True)
+    def test_options_list_all_backends_with_readiness(self):
+        payload, _ = server.handle_llm_status(_get=tags(["mistral:7b-instruct"]))
+        opts = payload["options"]
+        backends_seen = {o["backend"] for o in opts}
+        self.assertEqual(backends_seen, {"ollama", "openai", "deepseek", "anthropic"})
+        # ollama model is ready; deepseek needs a key (none set)
+        ds = next(o for o in opts if o["backend"] == "deepseek" and o["model"] == "deepseek-chat")
+        self.assertFalse(ds["ready"])
+        self.assertEqual(ds["needs"], "DEEPSEEK_API_KEY")
+        ol = next(o for o in opts if o["backend"] == "ollama")
+        self.assertTrue(ol["ready"])
+
+    @mock.patch.dict(os.environ, {"DEEPSEEK_API_KEY": "sk-x"}, clear=True)
+    def test_deepseek_ready_when_key_present(self):
+        payload, _ = server.handle_llm_status(_get=tags([]))
+        ds = next(o for o in payload["options"] if o["backend"] == "deepseek" and o["model"] == "deepseek-chat")
+        self.assertTrue(ds["ready"])
+
 
 if __name__ == "__main__":
     unittest.main()

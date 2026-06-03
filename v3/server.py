@@ -255,27 +255,41 @@ def handle_forecasts_list():
 
 
 def handle_llm_status(_get=None):
-    """Report the LLM backend and (for Ollama) which models are installed,
-    so the UI can offer a model picker. Returns (payload, status)."""
+    """Report every backend + model (with readiness) so the UI can offer a full
+    picker, not just the active backend. Returns (payload, status)."""
     from llm import backends
-    backend = os.environ.get("SIMENGINE_LLM_BACKEND", "ollama").lower()
-    configured = os.environ.get("SIMENGINE_LLM_MODEL") or backends.DEFAULT_MODELS.get(backend, "qwen2.5")
-    installed = backends.list_ollama_models(_get=_get) if backend == "ollama" else []
-    if backend == "ollama":
-        default = backends.suggest_ollama_model(preferred=configured, _get=_get) or configured
-        options = installed
-    else:
-        default = configured
-        options = []
-        for m in [configured] + backends.KNOWN_MODELS.get(backend, []):
-            if m and m not in options:
-                options.append(m)
+    active = os.environ.get("SIMENGINE_LLM_BACKEND", "ollama").lower()
+    installed = backends.list_ollama_models(_get=_get)
+    key_env = {"openai": "OPENAI_API_KEY", "deepseek": "DEEPSEEK_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+
+    options = []
+    for m in installed:
+        options.append({"backend": "ollama", "model": m, "label": m + " — local", "ready": True, "needs": None})
+    for b, models in backends.KNOWN_MODELS.items():
+        env = key_env.get(b, "")
+        ready = bool(os.environ.get(env)) or (b == "deepseek" and bool(os.environ.get("OPENAI_API_KEY")))
+        for m in models:
+            options.append({
+                "backend": b, "model": m,
+                "label": f"{m} — {b}" + ("" if ready else f" (needs {env})"),
+                "ready": ready, "needs": None if ready else env,
+            })
+
+    configured = os.environ.get("SIMENGINE_LLM_MODEL") or backends.DEFAULT_MODELS.get(active, "qwen2.5")
+    if active == "ollama":
+        configured = backends.suggest_ollama_model(preferred=configured, _get=_get) or configured
+
+    active_models = [o["model"] for o in options if o["backend"] == active]
     return {
-        "backend": backend,
-        "configured_model": configured,
+        "active_backend": active,
+        "default": {"backend": active, "model": configured},
+        "options": options,
+        "ollama_running": bool(installed),
+        # backward-compatible fields
+        "backend": active,
         "installed_models": installed,
-        "model_options": options,
-        "default_model": default,
+        "model_options": active_models or [o["model"] for o in options],
+        "default_model": configured,
         "backends": list(backends.DEFAULT_MODELS.keys()),
     }, 200
 
