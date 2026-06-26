@@ -13,7 +13,7 @@ when it is next touched.)
 import ast
 import math
 
-from kernel import SAMPLERS, DomainConfig, run_monte_carlo, SAFE_BUILTINS
+from kernel import SAMPLERS, DomainConfig, run_monte_carlo, SAFE_BUILTINS, normalize_condition
 
 _ALLOWED_FUNCS = set(SAFE_BUILTINS.keys())
 _PY_CONSTANTS = {"True", "False", "None"}
@@ -101,6 +101,111 @@ def check_expression_names(data):
     return out
 
 
+def _is_number(x):
+    return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _path_resolves(data, path):
+    """True if a dotted tunable path walks to an existing leaf in the config."""
+    node = data
+    for part in path.split("."):
+        if isinstance(node, dict) and part in node:
+            node = node[part]
+        else:
+            return False
+    return True
+
+
+def _validate_optimizer_blocks(data):
+    """Validate the tunable / fitness / safety blocks consumed by evolve().
+
+    These are never exercised by the quick test-run below, so a malformed shape
+    (tunable as a list of strings, fitness with ad-hoc weighted keys, a lever
+    path that doesn't resolve, a constraint missing required fields) used to pass
+    validation and then crash evolve with an opaque 500. NEVER raises — returns
+    a list of human-readable errors (llm/compiler.py calls this with no try).
+    """
+    errors = []
+
+    tunable = data.get("tunable")
+    if tunable is not None:
+        if not isinstance(tunable, list):
+            errors.append("'tunable' must be a list of {\"path\": ..., \"range\": [min, max]} objects")
+        else:
+            for i, t in enumerate(tunable):
+                if not isinstance(t, dict):
+                    errors.append(f"tunable[{i}] must be an object with 'path' and 'range', got {type(t).__name__}")
+                    continue
+                path = t.get("path")
+                if not isinstance(path, str) or not path:
+                    errors.append(f"tunable[{i}]: missing 'path' (a dotted string like 'controls.x.params.value')")
+                elif not _path_resolves(data, path):
+                    errors.append(f"tunable[{i}]: path '{path}' does not resolve to a value in this config")
+                rng = t.get("range")
+                if not (isinstance(rng, (list, tuple)) and len(rng) == 2
+                        and all(_is_number(x) and math.isfinite(x) for x in rng)):
+                    errors.append(f"tunable[{i}]: 'range' must be a [min, max] pair of finite numbers")
+                elif rng[0] >= rng[1]:
+                    errors.append(f"tunable[{i}]: 'range' must have min < max (got {list(rng)})")
+                else:
+                    step = t.get("step")
+                    if step is not None:
+                        if not _is_number(step) or not math.isfinite(step):
+                            errors.append(f"tunable[{i}]: 'step' must be a number")
+                        elif step <= 0 or step >= (rng[1] - rng[0]):
+                            errors.append(f"tunable[{i}]: 'step' must be > 0 and smaller than the range span")
+
+    fitness = data.get("fitness")
+    if fitness is not None and fitness != {}:
+        if not isinstance(fitness, dict) or "components" not in fitness:
+            errors.append("'fitness' must be an object with a 'components' list, e.g. "
+                          "{\"components\": [{\"expr\": ..., \"weight\": 1.0}]}")
+        elif not isinstance(fitness["components"], list) or not fitness["components"]:
+            errors.append("'fitness.components' must be a non-empty list of {\"expr\": ..., \"weight\": ...} objects")
+        else:
+            for i, comp in enumerate(fitness["components"]):
+                if not isinstance(comp, dict):
+                    errors.append(f"fitness.components[{i}] must be an object with an 'expr', got {type(comp).__name__}")
+                    continue
+                if not isinstance(comp.get("expr"), str) or not comp.get("expr"):
+                    errors.append(f"fitness.components[{i}]: missing 'expr'")
+                if "weight" in comp and not _is_number(comp["weight"]):
+                    errors.append(f"fitness.components[{i}]: 'weight' must be a number")
+
+    safety = data.get("safety")
+    if isinstance(safety, dict):
+        ccs = safety.get("chance_constraints")
+        if ccs is not None and not isinstance(ccs, list):
+            errors.append("'safety.chance_constraints' must be a list of constraint objects")
+        elif isinstance(ccs, list):
+            for i, cc in enumerate(ccs):
+                if not isinstance(cc, dict):
+                    errors.append(f"safety.chance_constraints[{i}] must be an object")
+                    continue
+                try:
+                    normalize_condition(cc.get("condition"))
+                except (ValueError, TypeError):
+                    errors.append(f"safety.chance_constraints[{i}]: unknown condition "
+                                  f"{cc.get('condition')!r} — use below/lt/< or above/gt/>")
+                for key in ("metric", "threshold", "max_prob"):
+                    if key not in cc:
+                        errors.append(f"safety.chance_constraints[{i}]: missing '{key}'")
+
+        cvars = safety.get("cvar_constraints")
+        if cvars is not None and not isinstance(cvars, list):
+            errors.append("'safety.cvar_constraints' must be a list of constraint objects")
+        elif isinstance(cvars, list):
+            for i, cv in enumerate(cvars):
+                if not isinstance(cv, dict):
+                    errors.append(f"safety.cvar_constraints[{i}] must be an object")
+                    continue
+                for key in ("metric", "alpha", "min_cvar"):
+                    if key not in cv:
+                        errors.append(f"safety.cvar_constraints[{i}]: missing '{key}'")
+
+    return errors
+
+
 def validate_config(data):
     """Validate a domain config, return list of errors (empty = valid)."""
     errors = []
@@ -147,6 +252,10 @@ def validate_config(data):
 
     if not data.get("metrics"):
         errors.append("Missing 'metrics' (need at least one output metric)")
+
+    # Optimizer blocks (tunable/fitness/safety) — consumed only by evolve(), so
+    # the test run below never catches a malformed shape. Validate them here.
+    errors.extend(_validate_optimizer_blocks(data))
 
     # Static check: every name in an expression must resolve (the kernel would
     # otherwise silently evaluate undefined names to 0).
