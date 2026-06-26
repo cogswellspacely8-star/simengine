@@ -251,19 +251,24 @@ def sensitivity_analysis(config: DomainConfig,
             impacts_on_median = []
             
             for trial in range(n_perturb):
+                # Common random numbers: the up and down legs share one seed so
+                # the difference isolates the parameter effect instead of carrying
+                # raw sampling noise (a zero-effect variable then scores exactly 0).
+                trial_seed = seed + trial
+
                 # Perturb up
                 perturbed_up = copy.deepcopy(config)
                 perturbed_up.n_simulations = n_base
                 perturbed_up.all_variables[var_name]["params"][param_name] = param_val + delta
 
-                r_up = run_monte_carlo(perturbed_up, seed=seed + trial * 2)
+                r_up = run_monte_carlo(perturbed_up, seed=trial_seed)
 
                 # Perturb down
                 perturbed_dn = copy.deepcopy(config)
                 perturbed_dn.n_simulations = n_base
                 perturbed_dn.all_variables[var_name]["params"][param_name] = param_val - delta
-                
-                r_dn = run_monte_carlo(perturbed_dn, seed=seed + trial * 2 + 1)
+
+                r_dn = run_monte_carlo(perturbed_dn, seed=trial_seed)
                 
                 up_mean = r_up["stats"][metric]["mean"]
                 dn_mean = r_dn["stats"][metric]["mean"]
@@ -366,7 +371,8 @@ def deterministic_baseline(config: DomainConfig) -> dict:
         elif dist == "uniform":
             point_est = (params["low"] + params["high"]) / 2
         elif dist == "bernoulli":
-            point_est = params["p"]
+            # Mode of a Bernoulli is a realizable 0/1, not the fractional mean p.
+            point_est = 1.0 if params.get("p", 0) >= 0.5 else 0.0
         elif dist == "poisson":
             point_est = params["lambda"]
         elif dist == "choice":
