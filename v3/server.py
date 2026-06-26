@@ -333,9 +333,12 @@ def generate_report_html(results, config_data):
             if f == "dollar": return f"${v:,.0f}"
             if f == "percent": return f"{v*100:.1f}%"
             return f"{v:,.2f}"
+        bp = s.get("binary_prob")
+        # Binary indicator: headline the event probability, not the 0/100 median.
+        median_cell = f"{bp*100:.0f}% chance" if bp is not None else _f(s['median'])
         rows += f"""<tr>
             <td style="font-weight:600">{mname.replace('_',' ').title()}</td>
-            <td>{_f(s['median'])}</td><td>{_f(s['mean'])}</td>
+            <td>{median_cell}</td><td>{_f(s['mean'])}</td>
             <td>{_f(s['p10'])}</td><td>{_f(s['p90'])}</td><td>{_f(s['std'])}</td>
         </tr>"""
 
@@ -357,6 +360,9 @@ def generate_report_html(results, config_data):
             <td>min ${c['min_cvar']:,.0f}</td>
         </tr>"""
 
+    fit = results.get("fitness")
+    fitness_html = f'<div class="fitness">Fitness: {fit:.1f}</div>' if fit is not None else ""
+
     return f"""<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><title>SimEngine Report — {domain}</title>
 <style>
@@ -374,7 +380,7 @@ td {{ padding: 8px; border-bottom: 1px solid #1a2236; }}
 <h1>SimEngine Report: {domain}</h1>
 <p class="meta">Generated {ts} | {results.get('n_simulations',0):,} simulations | {results.get('elapsed',0)}s</p>
 
-<div class="fitness">Fitness: {results.get('fitness', 0):.1f}</div>
+{fitness_html}
 
 <h2>Narrative Summary</h2>
 <div class="narrative">{narrative_html}</div>
@@ -497,7 +503,7 @@ class Handler(BaseHTTPRequestHandler):
                 if cfg.safety:
                     safety = evaluate_safety(mc, cfg.safety)
 
-                fitness = 0
+                fitness = None  # null when the domain defines no objective (UI hides the gauge)
                 if cfg.fitness:
                     fitness = compute_fitness(mc, cfg.fitness, cfg.safety)
 
