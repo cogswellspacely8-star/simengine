@@ -180,8 +180,8 @@
   },
 
   "tunable": [
-    {"path": "controls.safety_stock_units.params.value",    "range": [100, 1500]},
-    {"path": "controls.reorder_point.params.value",         "range": [400, 2000]},
-    {"path": "controls.order_quantity.params.value",         "range": [500, 3000]}
+    {"path": "controls.safety_stock_units.params.value",    "range": [100, 1500], "integer": true},
+    {"path": "controls.reorder_point.params.value",         "range": [400, 2000], "integer": true},
+    {"path": "controls.order_quantity.params.value",         "range": [500, 3000], "integer": true}
   ]
 }

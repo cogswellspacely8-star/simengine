@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from llm.ask import answer_question
 from llm.backends import LLMError
+from kernel import indicator_probability
 
 
 def _fmt(val, fmt):
@@ -43,6 +44,10 @@ def _print_human(res):
     print("\nKey numbers:")
     for m, s in res["results"]["stats"].items():
         label = m.replace("_", " ").title()
+        prob = indicator_probability(s)
+        if prob is not None:
+            print(f"  {label}: ~{prob * 100:.0f}% chance")
+            continue
         fmt = s.get("format", "number")
         print(f"  {label}: median {_fmt(s['median'], fmt)} "
               f"(80% range {_fmt(s['p10'], fmt)} to {_fmt(s['p90'], fmt)})")

@@ -349,6 +349,7 @@ def handle_optimize(args):
     return {
         "domain": result["domain"],
         "best_fitness": result["best"]["fitness"],
+        "best_controls": result["best_controls"],
         "best_stats": result["best"]["stats"],
         "best_safety": result["best"]["safety"],
         "history": result["history"],

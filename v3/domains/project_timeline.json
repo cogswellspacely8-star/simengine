@@ -165,7 +165,7 @@
   },
 
   "tunable": [
-    {"path": "controls.team_size.params.value",                "range": [2, 8]},
+    {"path": "controls.team_size.params.value",                "range": [2, 8], "integer": true},
     {"path": "parameters.velocity_per_dev.params.mode",        "range": [4, 14]},
     {"path": "parameters.scope_creep_rate.params.mode",        "range": [0.01, 0.08]},
     {"path": "controls.initial_scope.params.value",            "range": [300, 800]}

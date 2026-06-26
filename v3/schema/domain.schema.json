@@ -149,6 +149,15 @@
             "items": { "type": "number" },
             "minItems": 2,
             "maxItems": 2
+          },
+          "integer": {
+            "type": "boolean",
+            "description": "If true, the optimizer rounds this lever to a whole number (e.g. number of staff). Default false."
+          },
+          "step": {
+            "type": "number",
+            "description": "Optional grid spacing; the optimizer snaps this lever to multiples of step (measured from range[0]).",
+            "exclusiveMinimum": 0
           }
         }
       }

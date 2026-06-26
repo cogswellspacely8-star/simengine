@@ -97,7 +97,7 @@
   },
 
   "tunable": [
-    {"path": "controls.applications_per_week.params.value", "range": [5, 25]},
+    {"path": "controls.applications_per_week.params.value", "range": [5, 25], "integer": true},
     {"path": "parameters.interview_rate.params.mode",       "range": [0.05, 0.30]}
   ]
 }

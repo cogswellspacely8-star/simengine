@@ -166,7 +166,7 @@
   },
 
   "tunable": [
-    {"path": "controls.num_providers.params.value",           "range": [1, 3]},
+    {"path": "controls.num_providers.params.value",           "range": [1, 3], "integer": true},
     {"path": "controls.provider_monthly_salary.params.value", "range": [8000, 18000]},
     {"path": "controls.monthly_marketing.params.value",       "range": [500, 5000]}
   ]

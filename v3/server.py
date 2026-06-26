@@ -12,7 +12,7 @@ from urllib.parse import urlparse, parse_qs
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from kernel import (
     DomainConfig, run_monte_carlo, evaluate_safety,
-    compute_fitness, evolve, percentile, SAMPLERS
+    compute_fitness, evolve, percentile, SAMPLERS, indicator_probability
 )
 from bayesian import update_config, update_parameter
 from diagnostics import (
@@ -109,6 +109,15 @@ def generate_narrative(stats, safety, config_data):
         lines.append("")
 
     for mname, s in stats.items():
+        label = mname.replace("_", " ").title()
+
+        prob = indicator_probability(s)
+        if prob is not None:
+            lines.append(
+                f"**{label}**: about {prob * 100:.0f}% chance across all simulated scenarios."
+            )
+            continue
+
         fmt = s.get("format", "number")
         if fmt == "dollar":
             median_str = f"${s['median']:,.0f}"
@@ -123,7 +132,6 @@ def generate_narrative(stats, safety, config_data):
             p10_str = f"{s['p10']:,.1f}"
             p90_str = f"{s['p90']:,.1f}"
 
-        label = mname.replace("_", " ").title()
         lines.append(
             f"**{label}** is most likely {median_str} "
             f"(range: {p10_str} to {p90_str} in 80% of scenarios)."
@@ -509,6 +517,9 @@ class Handler(BaseHTTPRequestHandler):
                     "context": data.get("context", {}),
                 }
                 self._json_response(result)
+            except ValueError as e:
+                # Client config error (e.g. unknown safety condition) — 400, matching /api/evolve.
+                self._json_response({"error": str(e)}, 400)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
@@ -530,11 +541,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json_response({
                     "domain": result["domain"],
                     "best_fitness": result["best"]["fitness"],
+                    "best_controls": result["best_controls"],
                     "best_stats": result["best"]["stats"],
                     "best_safety": result["best"]["safety"],
                     "history": result["history"],
                     "elapsed": round(elapsed, 1),
                 })
+            except ValueError as e:
+                # Unoptimizable input (no fitness/tunable, bad config) — client error.
+                self._json_response({"error": str(e)}, 400)
             except Exception as e:
                 self._json_response({"error": str(e)}, 500)
             return

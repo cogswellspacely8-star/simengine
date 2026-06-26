@@ -492,6 +492,47 @@ def _compute_stats_python(all_metrics, metric_formats):
     return stats
 
 
+def _annotate_indicators(stats, all_metrics):
+    """Tag indicator metrics with their event probability (`binary_prob`).
+
+    A "100 if cond else 0" (or 0/1) metric yields per-run values of only 0 and
+    100 (or 0 and 1); its median collapses to its mode, so a 32% chance shows as
+    "most likely 0.0". The mean is the actual probability. Detected from the raw
+    value SET — percentiles interpolate off-grid and miss tail / 50-50 / high
+    rates — so this holds across the whole 0..1 band. Count metrics on a 0..N
+    scale (value set not a subset of {0,100}/{0,1}) are deliberately untouched.
+    """
+    for mname, s in stats.items():
+        if not isinstance(s, dict):
+            continue
+        vals = all_metrics.get(mname)
+        if not vals:
+            continue
+        valset = set(vals)
+        if len(valset) < 2:
+            continue  # degenerate (all-true or all-false) — no informative probability
+        if valset <= {0, 100}:
+            s["binary_prob"] = round(sum(vals) / len(vals) / 100.0, 4)
+        elif valset <= {0, 1}:
+            s["binary_prob"] = round(sum(vals) / len(vals), 4)
+    return stats
+
+
+def indicator_probability(stat):
+    """Event probability in (0, 1) for an indicator metric, else None.
+
+    Reads `binary_prob`, set by `_annotate_indicators` from the raw value set
+    (robust across all event rates). Consumed by the narrative + sim_ask CLI so
+    they report a probability instead of the misleading median.
+    """
+    if not isinstance(stat, dict):
+        return None
+    p = stat.get("binary_prob")
+    if isinstance(p, (int, float)) and not isinstance(p, bool) and 0 < p < 1:
+        return p
+    return None
+
+
 def _compute_trajectories_python(trajectory_samples):
     trajectories = {}
     for acc, steps in trajectory_samples.items():
@@ -503,6 +544,29 @@ def _compute_trajectories_python(trajectory_samples):
             p90.append(round(percentile(sorted_vals, 90), 2))
         trajectories[acc] = {"p10": p10, "p50": p50, "p90": p90}
     return trajectories
+
+
+# Chance-constraint condition keywords. Only "below"/"above" were recognized
+# historically; every synonym silently fell through to greater-than, inverting
+# the violation probability. These alias sets are the single source of truth
+# (validation.py imports them to reject unknown keywords at design time).
+# Inclusive operators (<=, >=) are treated as their strict family — the
+# difference is measure-zero for continuous Monte Carlo metrics.
+BELOW_CONDITIONS = frozenset({"below", "lt", "<", "less_than", "under", "lte", "<="})
+ABOVE_CONDITIONS = frozenset({"above", "gt", ">", "greater_than", "exceeds", "gte", ">="})
+
+
+def normalize_condition(condition):
+    """Return 'below' or 'above' for a recognized keyword; raise on anything else."""
+    cond = str(condition).strip().lower()
+    if cond in BELOW_CONDITIONS:
+        return "below"
+    if cond in ABOVE_CONDITIONS:
+        return "above"
+    raise ValueError(
+        f"Unknown chance-constraint condition {condition!r}; "
+        f"use one of below/lt/< or above/gt/>"
+    )
 
 
 def _evaluate_safety_python(raw, safety_config):
@@ -517,7 +581,7 @@ def _evaluate_safety_python(raw, safety_config):
         threshold = cc["threshold"]
         max_prob = cc["max_prob"]
 
-        if cc["condition"] == "below":
+        if normalize_condition(cc["condition"]) == "below":
             violations = sum(1 for v in vals if v < threshold)
         else:
             violations = sum(1 for v in vals if v > threshold)
@@ -592,7 +656,11 @@ def run_monte_carlo(config, seed=None, n_override=None):
         stats = _compute_stats_python(all_metrics, metric_formats)
     if trajectories is None:
         trajectories = _compute_trajectories_python(trajectory_samples)
-    
+
+    # Annotate indicator metrics with their event probability (works regardless
+    # of whether stats came from the native or pure-Python reducer).
+    _annotate_indicators(stats, all_metrics)
+
     return {
         "domain": config.name, "n_simulations": n,
         "stats": stats, "trajectories": trajectories,
@@ -683,6 +751,8 @@ def _prepare_tunable_specs(tunable):
         (
             param.get("path"),
             tuple(param.get("range", [])),
+            bool(param.get("integer", False)),
+            param.get("step"),
         )
         for param in tunable
     )
@@ -699,10 +769,25 @@ def _prepare_tunable_specs(tunable):
             "parents": parts[:-1],
             "leaf": parts[-1],
             "range": tuple(param["range"]),
+            "integer": bool(param.get("integer", False)),
+            "step": param.get("step"),
         })
 
     TUNABLE_CACHE[cache_key] = prepared
     return prepared
+
+
+def _quantize(value, lo, hi, integer=False, step=None):
+    """Clamp a candidate lever value to [lo, hi] and snap it to the grid the
+    control actually lives on: a numeric `step`, integers, or (default) 4 dp.
+    Without integer/step this is the historical round(value, 4) behavior."""
+    value = max(lo, min(hi, value))
+    if step:
+        value = lo + round((value - lo) / step) * step
+        value = max(lo, min(hi, value))
+    if integer:
+        return int(round(value))
+    return round(value, 4)
 
 
 def _resolve_parent(obj, parents):
@@ -721,7 +806,8 @@ def mutate_config(config_dict, tunable, rate=0.3, strength=0.15):
         obj = _resolve_parent(new, param["parents"])
         current = obj[param["leaf"]]
         delta = random.gauss(0, (hi - lo) * strength)
-        obj[param["leaf"]] = round(max(lo, min(hi, current + delta)), 4)
+        obj[param["leaf"]] = _quantize(current + delta, lo, hi,
+                                       param["integer"], param["step"])
     return new
 
 
@@ -760,6 +846,19 @@ def evolve(domain_path_or_dict, generations=15, population=20,
     tunable = config.tunable
     fitness_def = config.fitness
     safety_config = config.safety or None
+
+    if not (fitness_def and fitness_def.get("components")):
+        raise ValueError(
+            f"Cannot optimize '{config.name}': no 'fitness' objective defined. "
+            "Add a fitness block, e.g. "
+            '{"components": [{"expr": "<metric>_median", "weight": 1.0}]}, '
+            "so the optimizer knows what to maximize."
+        )
+    if not tunable:
+        raise ValueError(
+            f"Cannot optimize '{config.name}': no 'tunable' levers defined. "
+            "Add a tunable list of {\"path\": ..., \"range\": [lo, hi]} entries."
+        )
     
     manifest = make_manifest(base_dict, config.n_simulations, config.seed,
                              {"generations": generations, "population": population})
@@ -771,8 +870,18 @@ def evolve(domain_path_or_dict, generations=15, population=20,
         print(f"Manifest: {manifest['config_hash']}")
         print("=" * 70)
     
-    # Initialize population
+    # Initialize population. Quantize the seed's tunable values so an off-grid
+    # author value (e.g. an integer control seeded at 2.5) never survives as the
+    # reported best when the unmutated base wins.
     pop = [copy.deepcopy(base_dict)]
+    for spec in _prepare_tunable_specs(tunable):
+        try:
+            parent = _resolve_parent(pop[0], spec["parents"])
+            lo, hi = spec["range"]
+            parent[spec["leaf"]] = _quantize(parent[spec["leaf"]], lo, hi,
+                                             spec["integer"], spec["step"])
+        except (KeyError, TypeError):
+            pass
     for _ in range(population - 1):
         pop.append(mutate_config(base_dict, tunable, rate=0.8, strength=0.25))
     
@@ -843,8 +952,19 @@ def evolve(domain_path_or_dict, generations=15, population=20,
                 status = "PASS" if c["passed"] else "FAIL"
                 print(f"  [{status}] CVaR_{c['alpha']} of {c['metric']} = {c['actual_cvar']:,.0f} (min {c['min_cvar']:,})")
     
+    # Surface the winning lever values so the optimum is actionable. They live
+    # in best_ever["config"] at the tunable paths; project them out by path.
+    best_controls = {}
+    if best_ever is not None:
+        for spec in _prepare_tunable_specs(tunable):
+            try:
+                parent = _resolve_parent(best_ever["config"], spec["parents"])
+                best_controls[spec["path"]] = parent[spec["leaf"]]
+            except (KeyError, TypeError):
+                pass
+
     return {
-        "best": best_ever, "history": history,
+        "best": best_ever, "best_controls": best_controls, "history": history,
         "manifest": manifest, "domain": config.name,
     }
 

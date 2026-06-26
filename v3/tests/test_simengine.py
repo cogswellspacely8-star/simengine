@@ -356,6 +356,26 @@ class TestEvolve(unittest.TestCase):
         self.assertEqual(len(result["history"]), 2)
         self.assertIsInstance(result["best"]["fitness"], (int, float))
 
+    def test_evolve_returns_best_controls(self):
+        """The winning tunable values must be reported, not just the fitness."""
+        config = copy.deepcopy(MINI_CONFIG)
+        result = kernel.evolve(config, generations=2, population=3,
+                               workers=1, verbose=False)
+        self.assertIn("best_controls", result)
+        self.assertIsInstance(result["best_controls"], dict)
+        self.assertIn("parameters.rate.params.mode", result["best_controls"])
+        val = result["best_controls"]["parameters.rate.params.mode"]
+        self.assertGreaterEqual(val, 0.1)
+        self.assertLessEqual(val, 0.5)
+
+    def test_evolve_without_fitness_raises(self):
+        """Optimizing a domain with no fitness objective is meaningless (every
+        candidate scores 0); fail loudly instead of returning a bogus best."""
+        cfg = copy.deepcopy(MINI_CONFIG)
+        cfg.pop("fitness", None)
+        with self.assertRaises(ValueError):
+            kernel.evolve(cfg, generations=1, population=2, workers=1, verbose=False)
+
     def test_worker_evaluates_safety_once(self):
         mc_result = {
             "stats": {"final_total": {"mean": 100.0, "median": 100.0}},
