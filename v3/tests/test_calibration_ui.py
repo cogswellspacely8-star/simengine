@@ -21,9 +21,21 @@ class TestCaptureUI(unittest.TestCase):
         self.assertIn("function openTrackForecast(", HTML)
         self.assertIn("function submitTrackForecast(", HTML)
 
-    def test_track_posts_metric(self):
+    def test_track_posts_metric_and_resolve_by(self):
         self.assertIn("predicted_prob", HTML)
         self.assertIn("metric: metric", HTML)
+        self.assertIn("resolve_by: by", HTML)
+
+    def test_uses_quote_safe_escaper_not_attribute_interpolation(self):
+        # The metric in onclick must go through the JS-string-safe escaper, and
+        # the modal's question input value must be set via JS (not interpolated
+        # into a quoted attribute, where a quote in the question would break it).
+        self.assertIn("function jsStr(", HTML)
+        self.assertIn("openTrackForecast('${jsStr(", HTML)
+        self.assertIn("getElementById('track-q').value = q", HTML)
+
+    def test_ask_flow_passes_its_own_question(self):
+        self.assertIn("askLastQuestion", HTML)
 
 
 class TestVizUI(unittest.TestCase):

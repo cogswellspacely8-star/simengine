@@ -158,6 +158,23 @@ class TestReliabilityCurve(unittest.TestCase):
     def test_empty_when_nothing_resolved(self):
         self.assertEqual(calibration.CalibrationLedger(":memory:").reliability_curve(), [])
 
+    def test_interior_empty_bins_are_omitted(self):
+        led = self._ledger([(0.05, 0), (0.45, 1), (0.95, 1)])
+        curve = led.reliability_curve()
+        self.assertEqual(len(curve), 3)
+        self.assertEqual({b["lo"] for b in curve}, {0.0, 0.4, 0.9})
+
+    def test_resolve_by_and_metric_round_trip_through_ledger(self):
+        led = calibration.CalibrationLedger(":memory:")
+        fid = led.record("q", 0.6, metric="pct_chance", resolve_by="2026-06-30")
+        led.resolve(fid, 1)
+        row = led.all_forecasts()[-1]
+        self.assertEqual(row["metric"], "pct_chance")
+        self.assertEqual(row["resolve_by"], "2026-06-30")
+        # the nullable case must also survive
+        led.record("q2", 0.4)
+        self.assertIsNone(led.all_forecasts()[-1]["resolve_by"])
+
 
 class TestECE(unittest.TestCase):
     def _ledger(self, pairs):
@@ -202,12 +219,27 @@ class TestCalibrationReport(unittest.TestCase):
         self.assertIsNotNone(rep["brier"])          # aggregate score still computed
         self.assertAlmostEqual(rep["base_rate"], 0.5)
 
+    def test_just_below_threshold_not_ready(self):
+        rep = self._ledger([(0.5, 1)] * 9).calibration_report()  # n == min_n - 1
+        self.assertEqual(rep["n"], 9)
+        self.assertFalse(rep["ready"])
+        self.assertIsNone(rep["curve"])
+        self.assertIsNone(rep["ece"])
+
     def test_at_threshold_ready_with_curve(self):
         rep = self._ledger([(0.9, 1)] * 10).calibration_report()
         self.assertEqual(rep["n"], 10)
         self.assertTrue(rep["ready"])
-        self.assertTrue(rep["curve"])               # non-empty list
-        self.assertIsNotNone(rep["ece"])
+        self.assertEqual(len(rep["curve"]), 1)
+        self.assertEqual(rep["curve"][0]["lo"], 0.9)
+        # predicted 0.9 vs observed 1.0 -> ECE 0.1; all hits -> base rate 1.0
+        self.assertAlmostEqual(rep["ece"], 0.1)
+        self.assertAlmostEqual(rep["base_rate"], 1.0)
+
+    def test_custom_min_n_gate(self):
+        rep = self._ledger([(0.5, 1), (0.5, 0), (0.5, 1)]).calibration_report(min_n=3)
+        self.assertTrue(rep["ready"])
+        self.assertIsNotNone(rep["curve"])
 
 
 if __name__ == "__main__":

@@ -1600,7 +1600,7 @@ function renderStatCard(name, s, r) {
       <div class="stat-value neutral">${pct}% chance</div>
       <div class="stat-sub">across ${scen} scenarios</div>
       <button class="btn-add-var" style="margin-top:6px;font-size:10px"
-        onclick="event.stopPropagation();openTrackForecast('${name}', ${s.binary_prob})">Track this forecast</button>
+        onclick="event.stopPropagation();openTrackForecast('${jsStr(name)}', ${s.binary_prob})">Track this forecast</button>
     </div>
   `;
   }
@@ -2292,7 +2292,7 @@ function renderAsk(data) {
     typeof s.binary_prob === 'number'
       ? `<tr><td style="padding:4px 8px">${askEsc(k.replace(/_/g, ' '))}</td>` +
         `<td style="padding:4px 8px;text-align:right">${(s.binary_prob * 100).toFixed(0)}% chance</td>` +
-        `<td style="padding:4px 8px;text-align:right"><button class="btn-add-var" style="font-size:9px;padding:1px 6px" onclick="openTrackForecast('${askEsc(k)}', ${s.binary_prob}, askLastQuestion)">Track</button></td></tr>`
+        `<td style="padding:4px 8px;text-align:right"><button class="btn-add-var" style="font-size:9px;padding:1px 6px" onclick="openTrackForecast('${jsStr(k)}', ${s.binary_prob}, askLastQuestion, (askLastConfig&&askLastConfig.resolve_by)||null)">Track</button></td></tr>`
       : `<tr><td style="padding:4px 8px">${askEsc(k.replace(/_/g, ' '))}</td>` +
         `<td style="padding:4px 8px;text-align:right">${fmt(s.median, s.format)}</td>` +
         `<td style="padding:4px 8px;text-align:right;opacity:.8">${fmt(s.p10, s.format)} – ${fmt(s.p90, s.format)}</td></tr>`
@@ -2492,14 +2492,31 @@ async function addPrediction() {
   }
 }
 
+// Escape a string for safe embedding inside a single-quoted JS string that
+// itself lives in a double-quoted HTML attribute (onclick="fn('...')"). esc()
+// and askEsc() only escape HTML text, NOT quotes, so they are unsafe here.
+function jsStr(s) {
+  return String(s)
+    .replace(/\\/g, '\\\\')   // JS: backslash
+    .replace(/'/g, "\\'")     // JS: single quote (would close the JS string)
+    .replace(/&/g, '&amp;')   // HTML entities (browser decodes before JS sees it)
+    .replace(/"/g, '&quot;')  // HTML: would close the attribute
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // Capture: log a binary-indicator forecast into the calibration ledger.
-// `question` overrides the default (used by the Ask flow, where currentConfig
-// is not the question's source).
-function openTrackForecast(metric, prob, question) {
+// `question`/`resolveBy` override the defaults (used by the Ask flow, where
+// currentConfig is not the question's source). The metric is held in a closure
+// variable rather than interpolated into the submit button's onclick, and the
+// input values are set via JS so quotes can never break the markup.
+let _trackMetric = '';
+function openTrackForecast(metric, prob, question, resolveBy) {
+  _trackMetric = metric;
   const q = question
     || (currentConfig && currentConfig.context && currentConfig.context.decision)
     || metric.replace(/_/g, ' ');
-  const by = (currentConfig && currentConfig.resolve_by) || '';
+  const by = (resolveBy != null) ? resolveBy : ((currentConfig && currentConfig.resolve_by) || '');
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'track-overlay';
@@ -2509,20 +2526,25 @@ function openTrackForecast(metric, prob, question) {
       <h2>Track this forecast</h2>
       <div class="form-hint">Logs this probability now so it can be graded against reality later — that track record is what turns the engine from a calculator into a forecasting instrument.</div>
       <div class="form-group" style="margin-top:10px"><label class="form-label">Question</label>
-        <input class="form-input" id="track-q" value="${esc(q)}"></div>
+        <input class="form-input" id="track-q"></div>
       <div class="form-group"><label class="form-label">Probability (%)</label>
-        <input class="form-input" id="track-p" type="number" min="0" max="100" value="${(prob * 100).toFixed(0)}"></div>
+        <input class="form-input" id="track-p" type="number" min="0" max="100"></div>
       <div class="form-group"><label class="form-label">Resolve by (optional)</label>
-        <input class="form-input" id="track-by" type="date" value="${esc(by)}"></div>
+        <input class="form-input" id="track-by" type="date"></div>
       <div class="modal-actions" style="margin-top:14px">
-        <button class="btn btn-run" onclick="submitTrackForecast('${esc(metric)}')">Track</button>
+        <button class="btn btn-run" onclick="submitTrackForecast()">Track</button>
         <button class="btn btn-compare" onclick="document.getElementById('track-overlay').remove()">Cancel</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  // Set values via JS so a quote in the question/date cannot break the markup.
+  document.getElementById('track-q').value = q;
+  document.getElementById('track-p').value = (prob * 100).toFixed(0);
+  document.getElementById('track-by').value = by;
 }
 
-async function submitTrackForecast(metric) {
+async function submitTrackForecast() {
+  const metric = _trackMetric;
   const q = document.getElementById('track-q').value.trim();
   const p = parseFloat(document.getElementById('track-p').value) / 100;
   const by = document.getElementById('track-by').value || null;
