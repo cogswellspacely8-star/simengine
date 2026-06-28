@@ -94,6 +94,11 @@ def _utcnow():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+# A reliability diagram over a handful of resolved forecasts is statistical
+# noise that would imply a track record that doesn't exist; gate it.
+MIN_RESOLVED_FOR_CURVE = 10
+
+
 class CalibrationLedger:
     """A durable, timestamped log of forecasts and their realized outcomes.
 
@@ -217,3 +222,29 @@ class CalibrationLedger:
                 for b in curve),
             4,
         )
+
+    def calibration_report(self, min_n=MIN_RESOLVED_FOR_CURVE, n_bins=10):
+        """Aggregate scores plus a gated reliability curve.
+
+        Returns brier/log-loss/base-rate over all resolved forecasts, and the
+        reliability curve + ECE ONLY when at least `min_n` are resolved (a curve
+        over a few points would imply a track record that isn't there).
+        """
+        rows = self.resolved()
+        n = len(rows)
+        if n == 0:
+            return {"n": 0, "brier": None, "log_loss": None, "base_rate": None,
+                    "ready": False, "min_n": min_n, "curve": None, "ece": None}
+        preds = [r["predicted_prob"] for r in rows]
+        outs = [r["outcome"] for r in rows]
+        ready = n >= min_n
+        return {
+            "n": n,
+            "brier": round(brier_score(preds, outs), 4),
+            "log_loss": round(log_loss(preds, outs), 4),
+            "base_rate": round(sum(outs) / n, 4),
+            "ready": ready,
+            "min_n": min_n,
+            "curve": self.reliability_curve(n_bins) if ready else None,
+            "ece": self.expected_calibration_error(n_bins) if ready else None,
+        }

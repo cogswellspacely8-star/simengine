@@ -173,5 +173,36 @@ class TestECE(unittest.TestCase):
         self.assertIsNone(calibration.CalibrationLedger(":memory:").expected_calibration_error())
 
 
+class TestCalibrationReport(unittest.TestCase):
+    def _ledger(self, pairs):
+        led = calibration.CalibrationLedger(":memory:")
+        for p, o in pairs:
+            led.resolve(led.record("q", p), o)
+        return led
+
+    def test_empty(self):
+        rep = calibration.CalibrationLedger(":memory:").calibration_report()
+        self.assertEqual(rep["n"], 0)
+        self.assertFalse(rep["ready"])
+        self.assertIsNone(rep["curve"])
+        self.assertIsNone(rep["ece"])
+        self.assertEqual(rep["min_n"], calibration.MIN_RESOLVED_FOR_CURVE)
+
+    def test_below_threshold_not_ready(self):
+        rep = self._ledger([(0.5, 1), (0.5, 0)]).calibration_report()
+        self.assertEqual(rep["n"], 2)
+        self.assertFalse(rep["ready"])
+        self.assertIsNone(rep["curve"])
+        self.assertIsNotNone(rep["brier"])          # aggregate score still computed
+        self.assertAlmostEqual(rep["base_rate"], 0.5)
+
+    def test_at_threshold_ready_with_curve(self):
+        rep = self._ledger([(0.9, 1)] * 10).calibration_report()
+        self.assertEqual(rep["n"], 10)
+        self.assertTrue(rep["ready"])
+        self.assertTrue(rep["curve"])               # non-empty list
+        self.assertIsNotNone(rep["ece"])
+
+
 if __name__ == "__main__":
     unittest.main()
