@@ -1599,6 +1599,8 @@ function renderStatCard(name, s, r) {
       <div class="stat-label">${name.replace(/_/g, ' ')}</div>
       <div class="stat-value neutral">${pct}% chance</div>
       <div class="stat-sub">across ${scen} scenarios</div>
+      <button class="btn-add-var" style="margin-top:6px;font-size:10px"
+        onclick="event.stopPropagation();openTrackForecast('${name}', ${s.binary_prob})">Track this forecast</button>
     </div>
   `;
   }
@@ -2146,6 +2148,7 @@ let wizardMetrics = [];
 // Ask anything — natural-language -> config -> run -> explanation (/api/ask)
 // ---------------------------------------------------------------------------
 let askLastConfig = null;
+let askLastQuestion = '';
 
 function askEsc(s) {
   return String(s == null ? '' : s)
@@ -2255,6 +2258,7 @@ async function runAsk() {
       return;
     }
     askLastConfig = data.config;
+    askLastQuestion = q;
     out.innerHTML = renderAsk(data);
   } catch (e) {
     if (e.name === 'AbortError') {
@@ -2288,7 +2292,7 @@ function renderAsk(data) {
     typeof s.binary_prob === 'number'
       ? `<tr><td style="padding:4px 8px">${askEsc(k.replace(/_/g, ' '))}</td>` +
         `<td style="padding:4px 8px;text-align:right">${(s.binary_prob * 100).toFixed(0)}% chance</td>` +
-        `<td style="padding:4px 8px;text-align:right;opacity:.8">&mdash;</td></tr>`
+        `<td style="padding:4px 8px;text-align:right"><button class="btn-add-var" style="font-size:9px;padding:1px 6px" onclick="openTrackForecast('${askEsc(k)}', ${s.binary_prob}, askLastQuestion)">Track</button></td></tr>`
       : `<tr><td style="padding:4px 8px">${askEsc(k.replace(/_/g, ' '))}</td>` +
         `<td style="padding:4px 8px;text-align:right">${fmt(s.median, s.format)}</td>` +
         `<td style="padding:4px 8px;text-align:right;opacity:.8">${fmt(s.p10, s.format)} – ${fmt(s.p90, s.format)}</td></tr>`
@@ -2442,6 +2446,54 @@ async function addPrediction() {
     loadPredictions();
   } catch (e) {
     showToast('Could not log that prediction: ' + e, 'error');
+  }
+}
+
+// Capture: log a binary-indicator forecast into the calibration ledger.
+// `question` overrides the default (used by the Ask flow, where currentConfig
+// is not the question's source).
+function openTrackForecast(metric, prob, question) {
+  const q = question
+    || (currentConfig && currentConfig.context && currentConfig.context.decision)
+    || metric.replace(/_/g, ' ');
+  const by = (currentConfig && currentConfig.resolve_by) || '';
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'track-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <h2>Track this forecast</h2>
+      <div class="form-hint">Logs this probability now so it can be graded against reality later — that track record is what turns the engine from a calculator into a forecasting instrument.</div>
+      <div class="form-group" style="margin-top:10px"><label class="form-label">Question</label>
+        <input class="form-input" id="track-q" value="${esc(q)}"></div>
+      <div class="form-group"><label class="form-label">Probability (%)</label>
+        <input class="form-input" id="track-p" type="number" min="0" max="100" value="${(prob * 100).toFixed(0)}"></div>
+      <div class="form-group"><label class="form-label">Resolve by (optional)</label>
+        <input class="form-input" id="track-by" type="date" value="${esc(by)}"></div>
+      <div class="modal-actions" style="margin-top:14px">
+        <button class="btn btn-run" onclick="submitTrackForecast('${esc(metric)}')">Track</button>
+        <button class="btn btn-compare" onclick="document.getElementById('track-overlay').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+}
+
+async function submitTrackForecast(metric) {
+  const q = document.getElementById('track-q').value.trim();
+  const p = parseFloat(document.getElementById('track-p').value) / 100;
+  const by = document.getElementById('track-by').value || null;
+  if (!q) { showToast('Enter a question', 'error'); return; }
+  if (!(p >= 0 && p <= 1)) { showToast('Probability must be 0–100', 'error'); return; }
+  try {
+    await fetch('/api/forecast', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, predicted_prob: p, resolve_by: by, metric: metric }),
+    });
+    document.getElementById('track-overlay').remove();
+    showToast('Forecast tracked — grade it in Predictions when the outcome is known', 'success');
+  } catch (e) {
+    showToast('Could not track: ' + e, 'error');
   }
 }
 
