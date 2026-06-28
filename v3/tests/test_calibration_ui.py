@@ -26,5 +26,16 @@ class TestCaptureUI(unittest.TestCase):
         self.assertIn("metric: metric", HTML)
 
 
+class TestVizUI(unittest.TestCase):
+    def test_draw_reliability_present(self):
+        self.assertIn("function drawReliability(", HTML)
+
+    def test_gate_copy_present(self):
+        self.assertIn("calibration curve unlocks at", HTML)
+
+    def test_reliability_canvas_present(self):
+        self.assertIn("rel-canvas", HTML)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2379,6 +2379,36 @@ function closePredictions() {
   if (o) o.remove();
 }
 
+// Reliability diagram: observed frequency vs predicted probability per bucket.
+// Points on the dashed y=x line are perfectly calibrated.
+function drawReliability(canvas, curve) {
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width = canvas.clientWidth || 360;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+  const pad = 34;
+  const X = p => pad + p * (W - 2 * pad);
+  const Y = f => H - pad - f * (H - 2 * pad);
+  // axes
+  ctx.strokeStyle = '#2a3550'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, pad); ctx.lineTo(pad, H - pad); ctx.lineTo(W - pad, H - pad); ctx.stroke();
+  // perfect-calibration diagonal
+  ctx.strokeStyle = '#475569'; ctx.setLineDash([4, 4]);
+  ctx.beginPath(); ctx.moveTo(X(0), Y(0)); ctx.lineTo(X(1), Y(1)); ctx.stroke(); ctx.setLineDash([]);
+  // points
+  for (const b of curve) {
+    const px = X(b.mean_predicted), py = Y(b.observed_freq);
+    ctx.fillStyle = '#60a5fa';
+    ctx.beginPath(); ctx.arc(px, py, 4, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+    ctx.fillText('n=' + b.count, px + 6, py - 6);
+  }
+  ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif';
+  ctx.fillText('predicted →', W - 72, H - 8);
+  ctx.save(); ctx.translate(11, pad + 46); ctx.rotate(-Math.PI / 2);
+  ctx.fillText('observed →', 0, 0); ctx.restore();
+}
+
 async function loadPredictions() {
   const scoreEl = document.getElementById('pred-score');
   const listEl = document.getElementById('pred-list');
@@ -2391,6 +2421,19 @@ async function loadPredictions() {
       scoreEl.innerHTML = `<div style="padding:10px;border-radius:8px;background:#1f2a3a">Track record: <b>${s.n}</b> resolved &middot; Brier <b>${s.brier.toFixed(3)}</b> &middot; log-loss <b>${s.log_loss.toFixed(3)}</b> <span style="opacity:.7">(lower is better; 0.25 = always guessing 50/50)</span></div>`;
     } else {
       scoreEl.innerHTML = `<div style="padding:10px;border-radius:8px;background:#1f2a3a;opacity:.85">No predictions graded yet — click Hit or Miss on one below once the outcome is known, and your Brier score appears.</div>`;
+    }
+    // Gated reliability diagram (appended INSIDE scoreEl so it is replaced, not
+    // stacked, on each reload).
+    const cal = data.calibration || {};
+    if (cal.ready && cal.curve && cal.curve.length) {
+      scoreEl.insertAdjacentHTML('beforeend', `<div style="margin-top:10px">
+          <canvas id="rel-canvas" height="220" style="width:100%"></canvas>
+          <div class="form-hint">Reliability — expected calibration error ${(cal.ece*100).toFixed(1)}% &middot; base rate ${(cal.base_rate*100).toFixed(0)}% over ${cal.n} resolved (perfectly calibrated = points on the dashed line).</div>
+        </div>`);
+      const relC = document.getElementById('rel-canvas');
+      if (relC) drawReliability(relC, cal.curve);
+    } else if (cal.n != null && cal.n > 0) {
+      scoreEl.insertAdjacentHTML('beforeend', `<div class="form-hint" style="margin-top:10px">${cal.n}/${cal.min_n} resolved — the calibration curve unlocks at ${cal.min_n}.</div>`);
     }
     const fc = data.forecasts || [];
     if (!fc.length) {
