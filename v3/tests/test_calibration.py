@@ -153,5 +153,25 @@ class TestReliabilityCurve(unittest.TestCase):
         self.assertEqual(calibration.CalibrationLedger(":memory:").reliability_curve(), [])
 
 
+class TestECE(unittest.TestCase):
+    def _ledger(self, pairs):
+        led = calibration.CalibrationLedger(":memory:")
+        for p, o in pairs:
+            led.resolve(led.record("q", p), o)
+        return led
+
+    def test_perfect_calibration_is_zero(self):
+        led = self._ledger([(0.0, 0), (1.0, 1)])
+        self.assertEqual(led.expected_calibration_error(), 0.0)
+
+    def test_known_value(self):
+        # bin0: pred 0.05 obs 0.0 -> |0.05|; bin9: pred 0.95 obs 1.0 -> |0.05|
+        led = self._ledger([(0.05, 0), (0.05, 0), (0.95, 1), (0.95, 1)])
+        self.assertAlmostEqual(led.expected_calibration_error(), 0.05)
+
+    def test_none_when_empty(self):
+        self.assertIsNone(calibration.CalibrationLedger(":memory:").expected_calibration_error())
+
+
 if __name__ == "__main__":
     unittest.main()

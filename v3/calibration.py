@@ -201,3 +201,19 @@ class CalibrationLedger:
                 "observed_freq": round(sum(outs_b) / len(outs_b), 4),
             })
         return curve
+
+    def expected_calibration_error(self, n_bins=10):
+        """Count-weighted mean gap between predicted and observed per bucket.
+
+        ECE = sum_bins (count / N) * |observed_freq - mean_predicted|. None when
+        no forecasts are resolved.
+        """
+        curve = self.reliability_curve(n_bins)
+        if not curve:
+            return None
+        total = sum(b["count"] for b in curve)
+        return round(
+            sum(b["count"] / total * abs(b["observed_freq"] - b["mean_predicted"])
+                for b in curve),
+            4,
+        )
