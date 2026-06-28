@@ -37,6 +37,10 @@
       "type": "string",
       "description": "Time-axis unit label (e.g. 'month', 'week', 'sprint'). DomainConfig default 'step'."
     },
+    "resolve_by": {
+      "type": "string",
+      "description": "Optional ISO date when a binary forecast for this domain can be graded (e.g. '2026-06-30'). Pre-fills the Track-this-forecast form; not enforced by the engine."
+    },
     "seed": {
       "type": ["integer", "null"],
       "description": "Random seed. May be null. DomainConfig default None."

@@ -68,6 +68,18 @@ class TestSchemaContract(unittest.TestCase):
                "step_logic": [{"target": "y", "expr": "1"}], "metrics": {"y": {"expr": "y"}}}
         self.assertTrue(list(self.validator.iter_errors(bad)))
 
+    def test_resolve_by_is_an_optional_string(self):
+        base = {"name": "x", "n_steps": 5,
+                "parameters": {"p": {"distribution": "fixed", "params": {"value": 1}}},
+                "step_logic": [{"target": "y", "expr": "p"}],
+                "metrics": {"y": {"expr": "y"}}}
+        ok = dict(base, resolve_by="2026-06-30")
+        self.assertEqual(list(self.validator.iter_errors(ok)), [],
+                         "a string resolve_by must validate")
+        bad = dict(base, resolve_by=123)
+        self.assertTrue(list(self.validator.iter_errors(bad)),
+                        "a non-string resolve_by must be rejected")
+
 
 if __name__ == "__main__":
     unittest.main()
