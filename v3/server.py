@@ -257,9 +257,11 @@ def handle_resolve(body):
 
 
 def handle_forecasts_list():
-    """All logged forecasts (pending + resolved) plus the running Brier/log-loss."""
+    """All logged forecasts (pending + resolved) plus the running scores and the
+    gated calibration report (reliability curve + ECE once enough are resolved)."""
     led = _ledger()
-    return {"forecasts": led.all_forecasts(), "score": led.score()}, 200
+    return {"forecasts": led.all_forecasts(), "score": led.score(),
+            "calibration": led.calibration_report()}, 200
 
 
 def handle_llm_status(_get=None):

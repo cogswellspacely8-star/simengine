@@ -50,6 +50,21 @@ class TestForecastApi(unittest.TestCase):
         _, status = server.handle_resolve({"id": 99999, "outcome": 1})
         self.assertEqual(status, 404)
 
+    def test_forecasts_list_includes_calibration(self):
+        server.handle_forecast_record(
+            {"question": "q", "predicted_prob": 0.6,
+             "metric": "pct_chance", "resolve_by": "2026-12-31"})
+        payload, status = server.handle_forecasts_list()
+        self.assertEqual(status, 200)
+        self.assertIn("calibration", payload)
+        cal = payload["calibration"]
+        self.assertIn("ready", cal)
+        self.assertIn("min_n", cal)
+        # the logged forecast kept its metric + resolve_by (no migration needed)
+        f = payload["forecasts"][-1]
+        self.assertEqual(f["metric"], "pct_chance")
+        self.assertEqual(f["resolve_by"], "2026-12-31")
+
 
 if __name__ == "__main__":
     unittest.main()
