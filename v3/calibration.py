@@ -168,3 +168,36 @@ class CalibrationLedger:
             "brier": brier_score(preds, outs),
             "log_loss": log_loss(preds, outs),
         }
+
+    def reliability_curve(self, n_bins=10):
+        """Per-bucket calibration points over resolved forecasts.
+
+        Predicted probabilities are binned into n_bins equal-width buckets
+        [0, 1/n), ... [1 - 1/n, 1] (the last bucket includes 1.0). Each
+        non-empty bucket reports its count, mean predicted probability, and
+        observed outcome frequency. Empty buckets are omitted; [] when nothing
+        is resolved. Built from the raw resolved set, not interpolated stats.
+        """
+        rows = self.resolved()
+        if not rows:
+            return []
+        width = 1.0 / n_bins
+        buckets = [[] for _ in range(n_bins)]
+        for r in rows:
+            p = r["predicted_prob"]
+            idx = min(int(p / width), n_bins - 1)
+            buckets[idx].append((p, r["outcome"]))
+        curve = []
+        for i, b in enumerate(buckets):
+            if not b:
+                continue
+            ps = [p for p, _ in b]
+            outs_b = [o for _, o in b]
+            curve.append({
+                "lo": round(i * width, 4),
+                "hi": round((i + 1) * width, 4),
+                "count": len(b),
+                "mean_predicted": round(sum(ps) / len(ps), 4),
+                "observed_freq": round(sum(outs_b) / len(outs_b), 4),
+            })
+        return curve

@@ -126,5 +126,32 @@ class TestCalibrationLedger(unittest.TestCase):
         self.assertEqual(reopened.score()["n"], 1)
 
 
+class TestReliabilityCurve(unittest.TestCase):
+    def _ledger(self, pairs):
+        led = calibration.CalibrationLedger(":memory:")
+        for p, o in pairs:
+            led.resolve(led.record("q", p), o)
+        return led
+
+    def test_two_extreme_bins(self):
+        led = self._ledger([(0.05, 0), (0.05, 0), (0.95, 1), (0.95, 1)])
+        curve = led.reliability_curve()
+        self.assertEqual(len(curve), 2)
+        lo, hi = curve[0], curve[1]
+        self.assertEqual((lo["lo"], lo["hi"], lo["count"]), (0.0, 0.1, 2))
+        self.assertAlmostEqual(lo["mean_predicted"], 0.05)
+        self.assertAlmostEqual(lo["observed_freq"], 0.0)
+        self.assertEqual((hi["lo"], hi["hi"], hi["count"]), (0.9, 1.0, 2))
+        self.assertAlmostEqual(hi["observed_freq"], 1.0)
+
+    def test_prob_one_lands_in_last_bin(self):
+        curve = self._ledger([(1.0, 1)]).reliability_curve()
+        self.assertEqual(len(curve), 1)
+        self.assertEqual(curve[0]["lo"], 0.9)
+
+    def test_empty_when_nothing_resolved(self):
+        self.assertEqual(calibration.CalibrationLedger(":memory:").reliability_curve(), [])
+
+
 if __name__ == "__main__":
     unittest.main()
