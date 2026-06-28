@@ -149,6 +149,12 @@ class TestReliabilityCurve(unittest.TestCase):
         self.assertEqual(len(curve), 1)
         self.assertEqual(curve[0]["lo"], 0.9)
 
+    def test_exact_bin_boundaries_not_misbinned_by_float_error(self):
+        # 0.3/0.1 == 2.9999... in float; naive int() would mis-bin 0.3 into [0.2,0.3).
+        led = self._ledger([(0.3, 1), (0.7, 0), (0.9, 1)])
+        los = {b["lo"] for b in led.reliability_curve()}
+        self.assertEqual(los, {0.3, 0.7, 0.9})
+
     def test_empty_when_nothing_resolved(self):
         self.assertEqual(calibration.CalibrationLedger(":memory:").reliability_curve(), [])
 

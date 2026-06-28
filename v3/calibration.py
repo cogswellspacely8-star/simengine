@@ -190,7 +190,9 @@ class CalibrationLedger:
         buckets = [[] for _ in range(n_bins)]
         for r in rows:
             p = r["predicted_prob"]
-            idx = min(int(p / width), n_bins - 1)
+            # +1e-9 absorbs float error (0.3/0.1 == 2.9999…) so exact bin
+            # boundaries land in the correct bucket; p == 1.0 clamps to the last.
+            idx = min(int(p * n_bins + 1e-9), n_bins - 1)
             buckets[idx].append((p, r["outcome"]))
         curve = []
         for i, b in enumerate(buckets):
