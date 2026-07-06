@@ -1118,6 +1118,7 @@ canvas { width: 100%; display: block; }
       <button class="btn btn-run" id="btn-run" onclick="runSimulation()">Run Simulation</button>
       <button class="btn btn-evolve" id="btn-evolve" onclick="runEvolution()">Optimize (Evolutionary)</button>
       <button class="btn btn-compare" id="btn-compare" onclick="saveScenario()">Save Scenario</button>
+      <button class="btn btn-compare" id="btn-sweep" onclick="openSweep()" title="Run the simulation across a range of values for one control and compare">Sweep Control&hellip;</button>
       <button class="btn btn-compare" id="btn-compare-all" onclick="compareScenarios()" style="display:none">Compare All Scenarios</button>
       <button class="btn btn-compare" id="btn-export" onclick="exportReport()" style="display:none">Export Report</button>
       <button class="btn btn-compare" id="btn-share" onclick="shareConfig()" style="display:none">Share Config URL</button>
@@ -2070,6 +2071,7 @@ function saveScenario() {
     name,
     results: JSON.parse(JSON.stringify(currentResults)),
     color: SCENARIO_COLORS[scenarios.length % SCENARIO_COLORS.length],
+    inputs: captureInputs(),
   });
   // Also set as pinned for delta comparison
   pinnedResults = scenarios[scenarios.length - 1].results;
@@ -2117,6 +2119,171 @@ function renderScenarioBar() {
   });
   html += '</div>';
   return html;
+}
+
+// ═══════════════════════════════════════════
+// CONTROL SWEEP
+// ═══════════════════════════════════════════
+const SWEEP_MAX = 12;
+let _sweepPath = null;
+
+// Pure helper: min, min+step, ... <= max (inclusive, float-drift-safe).
+// Returns [] for invalid input. Does NOT cap — callers check SWEEP_MAX.
+function sweepValues(min, max, step) {
+  if (!isFinite(min) || !isFinite(max) || !isFinite(step)) return [];
+  if (step <= 0 || max < min) return [];
+  const n = Math.floor((max - min) / step + 1e-9) + 1;
+  const vals = [];
+  for (let i = 0; i < n; i++) vals.push(Math.round((min + i * step) * 1e6) / 1e6);
+  return vals;
+}
+
+// Pure helper: resolved snapshot of ALL sliders, so each scenario carries its
+// complete input set independent of later edits.
+function captureInputs() {
+  const inputs = {};
+  document.querySelectorAll('.param-slider[data-path]').forEach(sl => {
+    const v = parseFloat(sl.value);
+    if (!isNaN(v)) inputs[sl.dataset.path] = v;
+  });
+  return inputs;
+}
+
+function openSweep() {
+  const sliders = Array.from(document.querySelectorAll('.param-slider[data-path]'));
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'sweep-overlay';
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  overlay.innerHTML = `
+    <div class="modal" style="max-width:480px">
+      <h2>Sweep a control</h2>
+      <div class="form-hint">Runs the simulation once per value and opens the comparison. Replaces the saved scenario set.</div>
+      <div class="form-group" style="margin-top:10px"><label class="form-label">Variable</label>
+        <select class="form-input" id="sweep-var" onchange="prefillSweep()"></select></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+        <div class="form-group"><label class="form-label">Min</label>
+          <input class="form-input" id="sweep-min" type="number" step="any" oninput="updateSweepPreview()"></div>
+        <div class="form-group"><label class="form-label">Max</label>
+          <input class="form-input" id="sweep-max" type="number" step="any" oninput="updateSweepPreview()"></div>
+        <div class="form-group"><label class="form-label">Step</label>
+          <input class="form-input" id="sweep-step" type="number" step="any" oninput="updateSweepPreview()"></div>
+      </div>
+      <div class="form-hint" id="sweep-preview"></div>
+      <div class="modal-actions" style="margin-top:14px">
+        <button class="btn btn-run" id="sweep-run-btn" onclick="startSweep()">Run Sweep</button>
+        <button class="btn btn-compare" onclick="document.getElementById('sweep-overlay').remove()">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  // Options are populated via JS (never attribute interpolation) so labels
+  // with quotes can't break the markup.
+  const sel = document.getElementById('sweep-var');
+  sliders.forEach(sl => {
+    const item = sl.closest('.param-item');
+    const labelEl = item && item.querySelector('.param-label');
+    const opt = document.createElement('option');
+    opt.value = sl.dataset.path;
+    opt.textContent = labelEl ? labelEl.textContent.trim() : sl.dataset.path;
+    sel.appendChild(opt);
+  });
+  prefillSweep();
+}
+
+function prefillSweep() {
+  const sel = document.getElementById('sweep-var');
+  const sl = document.querySelector(`.param-slider[data-path="${CSS.escape(sel.value)}"]`);
+  if (!sl) { updateSweepPreview(); return; }
+  const lo = parseFloat(sl.min), hi = parseFloat(sl.max);
+  document.getElementById('sweep-min').value = sl.min;
+  document.getElementById('sweep-max').value = sl.max;
+  // Default step targets ~6 runs; snapped to 6 decimals like sweepValues.
+  const step = Math.round(((hi - lo) / 5) * 1e6) / 1e6;
+  document.getElementById('sweep-step').value = step > 0 ? step : 1;
+  updateSweepPreview();
+}
+
+function updateSweepPreview() {
+  const sel = document.getElementById('sweep-var');
+  const preview = document.getElementById('sweep-preview');
+  const btn = document.getElementById('sweep-run-btn');
+  if (!sel.options.length) {
+    preview.textContent = 'No adjustable variables to sweep.';
+    btn.disabled = true;
+    return;
+  }
+  const vals = sweepValues(
+    parseFloat(document.getElementById('sweep-min').value),
+    parseFloat(document.getElementById('sweep-max').value),
+    parseFloat(document.getElementById('sweep-step').value));
+  if (vals.length < 2 || vals.length > SWEEP_MAX) {
+    preview.textContent = vals.length === 0
+      ? 'Invalid range — step must be > 0 and max ≥ min.'
+      : `→ ${vals.length} runs — sweep needs between 2 and ${SWEEP_MAX}.`;
+    btn.disabled = true;
+  } else {
+    preview.textContent = `→ ${vals.length} runs: ${vals.join(', ')}`;
+    btn.disabled = false;
+  }
+}
+
+function startSweep() {
+  const path = document.getElementById('sweep-var').value;
+  const min = parseFloat(document.getElementById('sweep-min').value);
+  const max = parseFloat(document.getElementById('sweep-max').value);
+  const step = parseFloat(document.getElementById('sweep-step').value);
+  document.getElementById('sweep-overlay').remove();
+  runSweep(path, min, max, step);
+}
+
+async function runSweep(path, min, max, step) {
+  const vals = sweepValues(min, max, step);
+  if (vals.length < 2 || vals.length > SWEEP_MAX) {
+    return showToast(`Sweep needs between 2 and ${SWEEP_MAX} values`, 'error');
+  }
+  const varName = (path.split('.')[1] || path).replace(/_/g, ' ');
+  const pk = path.split('.').pop();
+  scenarios = [];
+  _sweepPath = path;
+  const baseOverrides = collectOverrides();
+  const payloadBase = currentDomain ? { domain: currentDomain } : { config: currentConfig };
+  showLoading(`Sweeping ${varName}`, `run 1/${vals.length}`);
+  try {
+    for (let i = 0; i < vals.length; i++) {
+      const v = vals[i];
+      const sub = document.querySelector('#loading-overlay .loading-sub');
+      if (sub) sub.textContent = `run ${i + 1}/${vals.length} — ${varName} = ${fmtParam(v, pk)}`;
+      const res = await fetch('/api/simulate', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          ...payloadBase,
+          overrides: {...baseOverrides, [path]: v},
+          n_simulations: parseInt(document.getElementById('n-sims').value),
+          seed: parseInt(document.getElementById('seed').value),
+        })
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      scenarios.push({
+        name: `${varName} = ${fmtParam(v, pk)}`,
+        results: data,
+        color: SCENARIO_COLORS[i % SCENARIO_COLORS.length],
+        inputs: {...captureInputs(), [path]: v},
+        swept: true,
+      });
+    }
+  } catch (e) {
+    hideLoading();
+    const doneBtn = document.getElementById('btn-compare-all');
+    if (doneBtn) doneBtn.style.display = scenarios.length >= 2 ? '' : 'none';
+    showToast(`Sweep failed at ${varName} = ${vals[scenarios.length]}: ${e.message}`, 'error');
+    return;
+  }
+  hideLoading();
+  const cmpBtn = document.getElementById('btn-compare-all');
+  if (cmpBtn) cmpBtn.style.display = '';
+  compareScenarios();
 }
 
 // ═══════════════════════════════════════════
@@ -3208,12 +3375,16 @@ async function applyBayesian() {
 // ═══════════════════════════════════════════
 function compareScenarios() {
   const all = [];
-  if (currentResults) all.push({ name: 'Current Run', results: currentResults, color: 'var(--accent)' });
+  // After a sweep, compare exactly the swept values — the pre-sweep Current
+  // Run would muddy the input diff. Manual saves still include it.
+  const allSwept = scenarios.length > 0 && scenarios.every(s => s.swept);
+  if (currentResults && !allSwept) {
+    all.push({ name: 'Current Run', results: currentResults, color: 'var(--accent)', inputs: captureInputs() });
+  }
   scenarios.forEach(s => all.push(s));
   if (all.length < 2) return showToast('Save at least 2 scenarios to compare', 'info');
 
   const metricNames = Object.keys(all[0].results.stats);
-  const main = document.getElementById('main');
 
   // Build comparison table
   let tableHtml = '<table class="compare-table"><thead><tr><th>Metric</th><th>Stat</th>';
@@ -3273,11 +3444,49 @@ function compareScenarios() {
     safetyHtml += '</div></div>';
   }
 
+  // Input diff: which levers actually differ across the compared scenarios.
+  let inputsHtml = '';
+  if (all.every(s => s.inputs)) {
+    const paths = new Set();
+    all.forEach(s => Object.keys(s.inputs).forEach(p => paths.add(p)));
+    const diffPaths = [...paths].filter(p => {
+      const vals = all.map(s => s.inputs[p]);
+      return vals.some(v => v !== vals[0]);
+    });
+    // Swept control first, then the rest in DOM order.
+    diffPaths.sort((a, b) => (a === _sweepPath ? -1 : 0) - (b === _sweepPath ? -1 : 0));
+    if (diffPaths.length) {
+      let t = '<table class="compare-table"><thead><tr><th>Input</th>';
+      all.forEach(s => {
+        t += `<th class="scenario-col"><div class="compare-chip"><span class="chip-color" style="background:${s.color}"></span>${esc(s.name)}</div></th>`;
+      });
+      t += '</tr></thead><tbody>';
+      for (const p of diffPaths) {
+        const parts = p.split('.');
+        const label = `${(parts[1] || p).replace(/_/g, ' ')} <span style="color:var(--text3)">.${parts[parts.length - 1]}</span>`;
+        const isSwept = p === _sweepPath;
+        t += `<tr><td class="metric-name" ${isSwept ? 'style="color:var(--accent);font-weight:600"' : ''}>${label}${isSwept ? ' ⟵ swept' : ''}</td>`;
+        all.forEach(s => {
+          const v = s.inputs[p];
+          t += `<td class="scenario-val" ${isSwept ? 'style="font-weight:600"' : ''}>${v === undefined ? '—' : fmtParam(v, parts[parts.length - 1])}</td>`;
+        });
+        t += '</tr>';
+      }
+      t += '</tbody></table>';
+      inputsHtml = `<div class="diag-section">
+        <div class="diag-title">Inputs That Differ</div>
+        <div class="diag-subtitle">Only levers with different values across scenarios are shown — these differences drive everything below.</div>
+        ${t}
+      </div>`;
+    }
+  }
+
   let html = `
     <div class="results-header">
       <h2>Scenario Comparison</h2>
       <span class="results-meta">${all.length} scenarios</span>
     </div>
+    ${inputsHtml}
     <div class="diag-section">
       <div class="diag-title">Metrics Side by Side</div>
       <div class="diag-subtitle">Green = best value, Red = worst. For cost/risk metrics, lower is better.</div>
@@ -3289,7 +3498,7 @@ function compareScenarios() {
       <canvas id="compare-canvas" height="280"></canvas>
     </div>`;
 
-  main.innerHTML = html;
+  setMain(html);
   requestAnimationFrame(() => drawCompareHistograms(all, metricNames[0]));
 }
 
