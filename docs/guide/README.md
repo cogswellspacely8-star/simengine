@@ -17,6 +17,7 @@ A normal calculator answers "what is 7 times 8." SimEngine answers "if I'm not s
 | 5 | [Explaining It to Others (Pitch Kit)](05-explaining-it-to-others.md) | The words to use when you walk into a room and have to explain it fast. |
 | 6 | [Model Your Own Decision](06-model-your-own.md) | Write your own model from scratch, built up from the smallest working example. |
 | 7 | [Ask Anything & Track Your Predictions](07-ask-and-track.md) | The no-JSON shortcut: ask in plain words, get a model + answer, and keep a scored track record of your forecasts. |
+| 8 | [Stress-Testing a Contract You Didn't Write](08-contract-stress-test.md) | The consulting workflow: turn a revenue-bearing contract into a model, find the clauses that fail under the real ramp, and counter with numbers. |
 
 Keep the [Glossary](glossary.md) open in a tab. Every term in the guide is defined there in plain language, with a short note on why it matters.
 
