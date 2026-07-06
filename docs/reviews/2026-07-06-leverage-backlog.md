@@ -83,15 +83,16 @@ trust: widen the schema `condition` enum to the kernel's accepted aliases, fix i
 description, and guard `_student_t` for non-integer `df` (round; it's a sampler, not a
 contract change). Rides along with #3's accuracy theme.
 
-### 5. Contract stress-test playbook — lane: GTM — backlog
+### 5. Contract stress-test playbook — lane: GTM — **THIS SESSION** (shipped after #1–#4)
 
-A `docs/guide/contract-stress-test.md` walkthrough (generalizing the paint_responsibly_jv
-workflow) that lets Tony run the **arms-length proof** — stress-testing a contract he
-didn't author — in under an hour: intake checklist (parties, payments, triggers,
-thresholds), config template, which diagnostics to run, and the two-document output
-pattern (internal analysis + counterpart-safe summary). Not shipped this session only
-because #1–#4 fill it; this is the top candidate for the next session since the
-arms-length proof is the next unblocking business move on record.
+Shipped as `docs/guide/08-contract-stress-test.md` (linked from the guide index): a
+walkthrough generalizing the paint_responsibly_jv workflow so the **arms-length
+proof** — stress-testing a contract Tony didn't author — is a repeatable 2–4 hour
+process: clause-to-config intake mapping, chance constraints carrying the contract text
+as `rationale`, the four interrogation questions (party downside, milestone-vs-ramp,
+sensitivity, sweep-to-counter-proposal), and the two-document output pattern (internal
+analysis + counterpart-safe summary). The remaining arms-length step is business, not
+code: source a third-party contract and run the playbook.
 
 ### 6. Backtest expansion: French Data Library equity sleeve — lane: technical trust — backlog
 
