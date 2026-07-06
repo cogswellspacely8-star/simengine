@@ -441,6 +441,32 @@ class Handler(BaseHTTPRequestHandler):
                 self._html_response(f.read())
             return
 
+        if path == "/api/health":
+            self._json_response({
+                "status": "ok",
+                "engine": "simengine-v3",
+                "python_only": True,
+                "endpoints": ["/api/simulate", "/api/validate", "/api/evolve",
+                              "/api/update", "/api/domains", "/api/schema",
+                              "/api/forecast", "/api/forecasts", "/api/ask"],
+            })
+            return
+
+        if path == "/llms.txt":
+            llms_path = os.path.join(os.path.dirname(STATIC_DIR), "..", "llms.txt")
+            try:
+                with open(llms_path) as f:
+                    body = f.read().encode("utf-8")
+                self.send_response(200)
+                self._cors()
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except FileNotFoundError:
+                self._json_response({"error": "not found"}, 404)
+            return
+
         if path == "/api/domains":
             self._json_response(list_domains())
             return

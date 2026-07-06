@@ -1,0 +1,53 @@
+# SimEngine
+
+> A domain-agnostic Monte Carlo simulation and decision-intelligence engine.
+> Zero third-party Python dependencies (stdlib only, Python 3.8+), one-file web
+> UI on port 8420, an HTTP API designed for AI agents, and an MCP server with 9
+> tools including a proceed/escalate decision gate. Open-core: the engine is
+> Apache-2.0; the hosted MCP service is commercial.
+
+Key facts for agents:
+- Define a decision problem as a single JSON config (parameters / controls /
+  exogenous variables, step logic, metrics, safety constraints); the engine
+  runs thousands of futures and returns distributions, safety verdicts, and an
+  optional evolutionary optimum. `simulate` is synchronous — results come back
+  in the same response.
+- The config contract is published JSON Schema: `GET /api/schema`
+  (v3/schema/domain.schema.json). Validate with `POST /api/validate` before
+  running. Probe liveness with `GET /api/health`.
+- Forecast accuracy is accounted for, not asserted: a sqlite calibration
+  ledger scores resolved forecasts with Brier / log-loss / CRPS, and the
+  forecasting pipeline is backtested on ~2,800 walk-forward monthly forecasts
+  over decades of public FRED data (docs/backtests/).
+- Outputs are decision support and scenario analysis, never financial advice
+  or trade signals.
+
+## Docs
+
+- [README](README.md): quick start, architecture, native acceleration
+- [Agent integration guide](v3/AGENT_INTEGRATION.md): how an AI agent builds,
+  validates, runs, and interprets a simulation (curl for every endpoint)
+- [Schema reference](docs/schema-reference.md): plain-language config contract
+- [Decision gate](docs/decision-gate.md): the `decide_under_uncertainty` MCP
+  tool — proceed/escalate on outcome risk
+- [Calibration backtest](docs/backtests/2026-07-06-fred-monthly-calibration.md):
+  historical validation results and the claims they do (and do not) support
+
+## API
+
+- [OpenAPI spec](v3/openapi.yaml): machine-readable HTTP contract
+- Endpoints: POST /api/simulate, /api/validate, /api/evolve, /api/update,
+  /api/ask, /api/forecast, /api/resolve; GET /api/domains, /api/schema,
+  /api/forecasts, /api/health
+
+## Examples
+
+- [Domain template](v3/domains/_template.json): annotated starting config
+- [Example domains](v3/domains/): SaaS runway, sales pipeline, real estate,
+  portfolio, supply chain, and more
+
+## Optional
+
+- [Commercial license](LICENSE-COMMERCIAL.md): hosted MCP terms
+- [Rust acceleration](crates/): opt-in native kernels; the engine always
+  falls back to pure Python

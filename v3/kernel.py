@@ -65,7 +65,9 @@ def _poisson(p):
 
 @sampler("student_t")
 def _student_t(p):
-    df = p.get("df", 5)
+    # df drives a chi-square via range(); round so fractional df (e.g. 4.5)
+    # samples instead of raising TypeError.
+    df = max(1, int(round(p.get("df", 5))))
     z = random.gauss(0, 1)
     v = sum(random.gauss(0, 1)**2 for _ in range(df))
     t = z / math.sqrt(v / df) if v > 0 else z

@@ -25,6 +25,15 @@ class TestApiSchema(unittest.TestCase):
         for dist in ["triangular", "bernoulli", "lognormal", "student_t"]:
             self.assertIn(dist, text)
 
+    def test_condition_enum_matches_kernel_aliases(self):
+        """The published contract must accept exactly what the kernel accepts."""
+        import kernel
+        payload, _ = server.handle_schema()
+        defs = payload.get("$defs") or payload.get("definitions") or {}
+        enum = set(defs["ChanceConstraint"]["properties"]["condition"]["enum"])
+        self.assertEqual(enum,
+                         set(kernel.BELOW_CONDITIONS) | set(kernel.ABOVE_CONDITIONS))
+
 
 if __name__ == "__main__":
     unittest.main()

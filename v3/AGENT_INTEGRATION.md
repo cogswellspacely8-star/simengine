@@ -387,6 +387,13 @@ curl -s -X POST http://localhost:8420/api/save-domain \
 
 ## 6. Curl Examples for Every Endpoint
 
+### Health check
+
+```bash
+curl -s http://localhost:8420/api/health
+# {"status": "ok", "engine": "simengine-v3", ...}
+```
+
 ### List all domains
 
 ```bash

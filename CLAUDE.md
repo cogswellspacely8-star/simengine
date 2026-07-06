@@ -52,6 +52,8 @@ v3/                        ALL production code lives here
   bayesian.py              Conjugate prior updates
   diagnostics.py           Convergence, sensitivity, AST evaluator
   calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger (wired to /api/forecast|resolve|forecasts + the Predictions UI)
+  backtest.py              Historical calibration backtest: walk-forward FRED forecasts through the engine, scored via calibration.py (offline from backtest_data/; --fetch refreshes, opt-in network)
+  backtest_data/           Committed FRED CSV snapshots (UNRATE/CPIAUCSL/INDPRO) so the backtest is reproducible offline
   validation.py            Canonical config validation (shared by server + llm compiler); never raises on bad shapes
   native.py                Optional Rust loader + Python fallback glue
   mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)

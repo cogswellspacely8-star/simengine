@@ -91,8 +91,9 @@ parsed trees are reused across calls, and that cache can be disabled with
 - **Genetic optimizer** -- Evolve control parameters toward the best outcome while respecting safety bounds. Crossover, mutation, elitism, tournament selection.
 - **Bayesian updating** -- Feed observed data back into your model. Conjugate priors (Beta-Binomial, Gamma-Poisson, Normal-Normal) tighten distributions as evidence arrives.
 - **Diagnostics** -- Convergence analysis (proves your sample size is sufficient), sensitivity analysis (ranks which inputs drive the output), deterministic baseline comparison (quantifies the value of simulation over spreadsheet math).
-- **Web UI** -- Histograms, trajectory fans, risk gauges, scenario comparison, domain wizard, Bayesian update modal, export to standalone HTML report.
-- **AI agent integration** -- POST a config inline to `/api/simulate` and get structured results back. No files needed. LLMs can use SimEngine as a tool.
+- **Web UI** -- Histograms, trajectory fans, risk gauges, scenario comparison with control sweeps and input diffs, domain wizard, Bayesian update modal, export to standalone HTML report.
+- **AI agent integration** -- POST a config inline to `/api/simulate` and get structured results back. No files needed. LLMs can use SimEngine as a tool (`llms.txt` at the repo root and `GET /llms.txt` orient them).
+- **Validated calibration** -- A sqlite forecast ledger scores predictions with proper scoring rules (Brier / log-loss / CRPS), and the pipeline is backtested on ~2,800 walk-forward monthly forecasts over decades of public FRED data. Run it yourself: `cd v3 && python3 backtest.py` (offline, from committed snapshots). Results: [docs/backtests/](docs/backtests/2026-07-06-fred-monthly-calibration.md).
 
 ---
 

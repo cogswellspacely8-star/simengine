@@ -489,10 +489,12 @@ def sample_student_t(params: dict) -> float:
         df: degrees of freedom (lower = fatter tails; 5 is common for equities)
         min/max: optional clamping bounds
     """
-    df = params.get("df", 5)
+    # df drives range(); round so fractional df (e.g. 4.5) samples instead of
+    # raising TypeError (mirrors kernel._student_t).
+    df = max(1, int(round(params.get("df", 5))))
     mean = params.get("mean", 0)
     scale = params.get("scale", 1)
-    
+
     # Generate t-distributed sample via ratio of normal to chi-squared
     z = random.gauss(0, 1)
     # Chi-squared(df) = sum of df standard normals squared

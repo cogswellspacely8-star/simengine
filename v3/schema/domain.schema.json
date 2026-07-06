@@ -373,7 +373,7 @@
 
     "ChanceConstraint": {
       "type": "object",
-      "description": "Probabilistic constraint on a metric. All four keys are accessed directly (no .get) in _evaluate_safety_python, so they are effectively required when the constraint is present. 'below' counts outcomes v < threshold; any other condition value counts v > threshold.",
+      "description": "Probabilistic constraint on a metric. All four keys are accessed directly (no .get) in _evaluate_safety_python, so they are effectively required when the constraint is present. Below-style conditions count outcomes v < threshold; above-style count v > threshold; an unrecognized keyword raises ValueError at evaluation time (fail-loud, never silently inverted).",
       "required": ["metric", "condition", "threshold", "max_prob"],
       "properties": {
         "metric": {
@@ -382,8 +382,9 @@
         },
         "condition": {
           "type": "string",
-          "enum": ["below", "above"],
-          "description": "'below' counts v < threshold; otherwise counts v > threshold."
+          "enum": ["below", "lt", "<", "less_than", "under", "lte", "<=",
+                   "above", "gt", ">", "greater_than", "exceeds", "gte", ">="],
+          "description": "Below-style aliases (below/lt/</less_than/under/lte/<=) count v < threshold; above-style (above/gt/>/greater_than/exceeds/gte/>=) count v > threshold. Mirrors kernel.py BELOW_CONDITIONS/ABOVE_CONDITIONS."
         },
         "threshold": {
           "type": "number",
