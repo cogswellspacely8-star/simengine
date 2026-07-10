@@ -1,0 +1,22 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.cogswellspacely8-star/simengine",
+  "description": "Monte Carlo decision-intelligence over MCP: simulate, optimize, and decide under uncertainty.",
+  "repository": {
+    "url": "https://github.com/cogswellspacely8-star/simengine",
+    "source": "github"
+  },
+  "version": "3.0.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://pypi.org",
+      "identifier": "simengine-mcp",
+      "version": "3.0.0",
+      "runtimeHint": "uvx",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
