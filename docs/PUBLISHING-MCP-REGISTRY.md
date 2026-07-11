@@ -2,8 +2,17 @@
 
 Runbook for listing SimEngine on `registry.modelcontextprotocol.io` as the
 decision-intelligence MCP server. This is the highest-consensus GTM move in the
-wiki (distribution through the channel AI clients actually read). Everything
-here is prepared; the two **decision gates** below are yours to trigger.
+wiki (distribution through the channel AI clients actually read).
+
+> **EXECUTED 2026-07-11** — both decision gates were triggered per the Phase 0
+> spec (`docs/superpowers/specs/2026-07-11-hosted-mcp-revenue-pipeline-design.md`):
+> package live at https://pypi.org/project/simengine-mcp/3.0.0/ and listing
+> `io.github.cogswellspacely8-star/simengine` active on the registry
+> (`GET /v0/servers?search=simengine`). Notes vs the runbook as written:
+> the `install.sh` URL now 404s — install `mcp-publisher` from the GitHub
+> release binaries instead; the `mcp-name` ownership marker is an HTML comment
+> (`<!-- mcp-name: ... -->`) in `README-pypi.md`, per current registry docs.
+> Keep the version-lockstep rule below on every release.
 
 ## The one hard fact that shapes everything
 
