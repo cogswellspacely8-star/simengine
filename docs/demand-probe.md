@@ -51,3 +51,28 @@ Either way you learned it in two days, not two weeks.
 - `decide_under_uncertainty` MCP tool — live in `v3/mcp_server.py`.
 - Calibration ledger + scoring — `v3/calibration.py`.
 - The pattern + examples — [`docs/decision-gate.md`](decision-gate.md).
+
+## FINAL — posted text and log (2026-07-11)
+
+Post text: the draft above, verbatim, with one addition at the end:
+"(It's open source and runs with zero deps — `uvx simengine-mcp` — but I'm
+asking about the idea, not driving installs.)"
+
+Channels (pick both):
+1. r/AI_Agents — as a "would you use this" question
+2. Anthropic developer community MCP channel
+
+Rules: post the same day in both; no other links; reply to every response;
+do not post the landing page unless someone asks where to find it.
+
+### Response log
+
+| # | Channel | Response (quote/summary) | Signal (use / pay / no) | Timestamp |
+|---|---------|--------------------------|--------------------------|-----------|
+| 1 | | | | |
+
+### Outcome (fill at +48h)
+
+- Organic "I'd use this / send a link" count: __
+- Tier per decision rule above: **10+ / 3–9 / ≤2** → __
+- Phase 1 consequence: full build / free-tier-only build / stop
