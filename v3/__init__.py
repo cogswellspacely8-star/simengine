@@ -23,4 +23,4 @@ __all__ = [
     "deterministic_baseline", "compare_to_baseline",
     "ga_hyperparameter_report", "safe_eval_expr",
 ]
-__version__ = "3.0.0"
+__version__ = "3.0.1"

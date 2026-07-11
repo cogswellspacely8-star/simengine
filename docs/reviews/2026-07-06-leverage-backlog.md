@@ -86,7 +86,7 @@ contract change). Rides along with #3's accuracy theme.
 ### 5. Contract stress-test playbook — lane: GTM — **THIS SESSION** (shipped after #1–#4)
 
 Shipped as `docs/guide/08-contract-stress-test.md` (linked from the guide index): a
-walkthrough generalizing the paint_responsibly_jv workflow so the **arms-length
+walkthrough generalizing the first client JV deal-modeling workflow so the **arms-length
 proof** — stress-testing a contract Tony didn't author — is a repeatable 2–4 hour
 process: clause-to-config intake mapping, chance constraints carrying the contract text
 as `rationale`, the four interrogation questions (party downside, milestone-vs-ramp,

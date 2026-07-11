@@ -47,10 +47,11 @@ Intake checklist:
 
 ## Step 2 — Author the config
 
-Start from the shipped JV precedent — copy its shape, not its numbers:
+Start from the annotated template — copy its shape, then model the deal's
+mechanics into it:
 
 ```bash
-curl -s http://localhost:8420/api/domain/paint_responsibly_jv.json | python3 -m json.tool | less
+curl -s http://localhost:8420/api/domain/_template.json | python3 -m json.tool | less
 ```
 
 The structural pattern that makes contract analysis work:

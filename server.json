@@ -6,13 +6,13 @@
     "url": "https://github.com/cogswellspacely8-star/simengine",
     "source": "github"
   },
-  "version": "3.0.0",
+  "version": "3.0.1",
   "packages": [
     {
       "registryType": "pypi",
       "registryBaseUrl": "https://pypi.org",
       "identifier": "simengine-mcp",
-      "version": "3.0.0",
+      "version": "3.0.1",
       "runtimeHint": "uvx",
       "transport": {
         "type": "stdio"
