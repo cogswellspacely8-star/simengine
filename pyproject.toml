@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "simengine-mcp"
+version = "3.0.0"
+description = "Monte Carlo decision-intelligence over MCP — zero-dependency pure-Python engine"
+readme = "README-pypi.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Venture Horizon LLC / OtrovertLabs" }]
+keywords = ["mcp", "monte-carlo", "simulation", "decision-intelligence", "risk", "optimization"]
+dependencies = []                     # ZERO — the pure-stdlib promise
+
+[project.optional-dependencies]
+sdk = ["mcp>=1.0"]                    # optional official-SDK path; stdlib JSON-RPC is the default
+
+[project.scripts]
+simengine-mcp = "simengine_mcp.mcp_server:main"
+
+[project.urls]
+Homepage = "https://github.com/cogswellspacely8-star/simengine"
+Source = "https://github.com/cogswellspacely8-star/simengine"
+
+[tool.setuptools]
+package-dir = { "simengine_mcp" = "v3" }
+packages = ["simengine_mcp"]
+
+[tool.setuptools.package-data]
+simengine_mcp = ["domains/*.json", "schema/*.json", "mcp_config.json"]

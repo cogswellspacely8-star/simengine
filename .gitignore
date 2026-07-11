@@ -16,3 +16,8 @@ target/
 # calibration ledger (local data)
 forecasts.db
 *.db
+
+# PyPI packaging build artifacts (Task 2: build with `python3 -m build`)
+dist/
+build/
+*.egg-info/

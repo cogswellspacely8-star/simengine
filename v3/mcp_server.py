@@ -632,10 +632,15 @@ def run_with_stdio_jsonrpc():
 # Entry Point
 # ---------------------------------------------------------------------------
 
-if __name__ == "__main__":
+def main():
+    """Console entry point (simengine-mcp). Same behaviour as running the module."""
     try:
         run_with_mcp_sdk()
     except ImportError:
         # MCP SDK not installed — fall back to raw JSON-RPC
         print("MCP SDK not found, using raw stdio JSON-RPC transport", file=sys.stderr)
         run_with_stdio_jsonrpc()
+
+
+if __name__ == "__main__":
+    main()
