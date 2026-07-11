@@ -23,8 +23,8 @@ or add it to any MCP client as a stdio server with command `simengine-mcp`.
 ## Validated
 
 Backtested on 2,819 walk-forward monthly forecasts over up to seven decades
-of public FRED data, scored with proper scoring rules (Brier, log loss,
-ECE). Details, source, docs, and the full engine (web UI, HTTP API):
+of public FRED data, scored with proper scoring rules (Brier, log loss)
+plus calibration error (ECE). Details, source, docs, and the full engine (web UI, HTTP API):
 https://github.com/cogswellspacely8-star/simengine
 
 It models **outcome risk** — the spread of results given uncertain inputs —

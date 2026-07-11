@@ -70,7 +70,11 @@ crates/
 scripts/
   bench_native.py          Performance comparison
   install_native.sh        Native build helper
+  smoke_mcp_stdio.py        MCP stdio smoke test (initialize, list tools, list_domains); wrap with shell `timeout`
 Makefile                   Targets: venv, native-install, native-check, native-test, native-bench, test, rust-test
+pyproject.toml              PyPI packaging (simengine-mcp); version must match v3/__init__.py and server.json
+README-pypi.md              PyPI long description (separate from the repo README)
+server.json                 MCP registry manifest; version must match pyproject.toml and v3/__init__.py
 ```
 
 ## Things to verify before claiming a change works
@@ -90,6 +94,14 @@ Makefile                   Targets: venv, native-install, native-check, native-t
 - Don't change the default port (8420) without updating `mcp_config.json`, all docs, and any agent integrations that hardcoded it.
 - Don't break the JSON config schema in `domains/_template.json` — domain configs are user-authored and a schema break is a usability regression.
 - Don't move production code out of `v3/`. The README documents that location and external integrations may rely on it.
+
+## Packaging / PyPI
+
+`v3/` is also published as the zero-dependency PyPI package `simengine-mcp` (console script `simengine-mcp`, runnable via `uvx simengine-mcp` with no install step).
+
+- **Version lockstep, enforced.** `version` in `pyproject.toml`, `__version__` in `v3/__init__.py`, and `version` in `server.json` must be identical. `v3/tests/test_packaging_invariants.py` fails the suite if they drift.
+- **`v3/__init__.py` carries a sys.path bootstrap** needed only by the installed package (so its sibling flat imports like `from kernel import ...` still resolve under the `simengine_mcp` package name). It must stay inert in-repo — no `import v3` or `from v3 import` anywhere in the tree. Also test-enforced, same file.
+- **Releasing:** follow `docs/PUBLISHING-MCP-REGISTRY.md`.
 
 ## Environment overrides (handy for benchmarking and triage)
 

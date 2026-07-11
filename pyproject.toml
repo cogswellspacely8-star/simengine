@@ -26,6 +26,7 @@ Source = "https://github.com/cogswellspacely8-star/simengine"
 [tool.setuptools]
 package-dir = { "simengine_mcp" = "v3" }
 packages = ["simengine_mcp"]
+license-files = ["LICENSE"]
 
 [tool.setuptools.package-data]
 simengine_mcp = ["domains/*.json", "schema/*.json", "mcp_config.json"]
