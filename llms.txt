@@ -22,6 +22,12 @@ Key facts for agents:
 - Outputs are decision support and scenario analysis, never financial advice
   or trade signals.
 
+## Install
+
+- MCP server: `uvx simengine-mcp` — listed on the
+  [official MCP registry](https://registry.modelcontextprotocol.io/?search=simengine).
+- Hosted, no-install endpoint: [join the waitlist](https://cogswellspacely8-star.github.io/simengine-site/#waitlist).
+
 ## Docs
 
 - [README](README.md): quick start, architecture, native acceleration

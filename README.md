@@ -26,6 +26,13 @@ cd v3 && python3 server.py
 
 That is it. No `pip install`, no Docker, no Node, no build step. Python 3.8+ is the only requirement.
 
+## Install as an MCP server
+
+    uvx simengine-mcp
+
+Listed on the [official MCP registry](https://registry.modelcontextprotocol.io/?search=simengine).
+Hosted, no-install endpoint: [join the waitlist](https://cogswellspacely8-star.github.io/simengine-site/#waitlist).
+
 ## Optional Native Acceleration
 
 The default engine remains pure Python. A Rust workspace now lives at the repo root
