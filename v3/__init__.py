@@ -8,7 +8,7 @@ import sys
 # package is installed (e.g. as `simengine_mcp`), those flat imports would
 # otherwise fail — so mirror the same sys.path arrangement here, before
 # importing anything that might trigger them.
-sys.path.insert(0, os.path.dirname(__file__))
+sys.path.append(os.path.dirname(__file__))
 
 from .kernel import DomainConfig, run_monte_carlo, evolve, compute_fitness
 from .diagnostics import (
