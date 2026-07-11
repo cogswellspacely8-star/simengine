@@ -79,11 +79,14 @@ class TestVersionLockstep(unittest.TestCase):
                             return value.value
         self.fail("no __version__ found in v3/__init__.py")
 
-    def _server_json_version(self):
+    def _server_json(self):
         import json
         path = os.path.join(REPO_ROOT, "server.json")
         with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            return json.load(f)
+
+    def _server_json_version(self):
+        data = self._server_json()
         self.assertIn("version", data, "no top-level version in server.json")
         return data["version"]
 
@@ -96,6 +99,18 @@ class TestVersionLockstep(unittest.TestCase):
             (pyproject_version, pyproject_version, pyproject_version),
             "version mismatch: pyproject.toml=%r v3/__init__.py=%r server.json=%r"
             % (pyproject_version, init_version, server_json_version),
+        )
+
+    def test_server_json_package_version_matches_top_level(self):
+        # docs/PUBLISHING-MCP-REGISTRY.md: packages[0].version bumps in
+        # lockstep with the top-level version (and hence all three files).
+        data = self._server_json()
+        packages = data.get("packages", [])
+        self.assertTrue(packages, "server.json has no packages entry")
+        self.assertEqual(
+            packages[0].get("version"), data.get("version"),
+            "server.json packages[0].version=%r != top-level version=%r"
+            % (packages[0].get("version"), data.get("version")),
         )
 
 
