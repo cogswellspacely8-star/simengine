@@ -21,3 +21,4 @@ forecasts.db
 dist/
 build/
 *.egg-info/
+v3/results.json
