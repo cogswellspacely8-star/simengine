@@ -239,10 +239,21 @@ def sample_var(var_def, state):
 # Experiment Manifest
 # ---------------------------------------------------------------------------
 def make_manifest(config_path, n_sims, seed, extra=None):
-    """Addresses reproducibility critique: every run is traceable."""
-    config_text = json.dumps(config_path) if isinstance(config_path, dict) else open(config_path).read()
+    """Addresses reproducibility critique: every run is traceable.
+
+    config_hash is taken over the CANONICAL json of the config (sorted keys, no
+    insignificant whitespace, UTF-8), so it identifies the *model* rather than
+    its formatting: reformatting a config file or reordering its keys leaves the
+    hash unchanged, while any change to a value changes it.
+    """
+    if isinstance(config_path, dict):
+        data = config_path
+    else:
+        with open(config_path, encoding="utf-8") as f:
+            data = json.load(f)
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return {
-        "config_hash": hashlib.sha256(config_text.encode()).hexdigest()[:16],
+        "config_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16],
         "n_simulations": n_sims,
         "seed": seed,
         "kernel_version": "3.0.0",
