@@ -241,10 +241,11 @@ def sample_var(var_def, state):
 def make_manifest(config_path, n_sims, seed, extra=None):
     """Addresses reproducibility critique: every run is traceable.
 
-    config_hash is taken over the CANONICAL json of the config (sorted keys, no
-    insignificant whitespace, UTF-8), so it identifies the *model* rather than
-    its formatting: reformatting a config file or reordering its keys leaves the
-    hash unchanged, while any change to a value changes it.
+    config_hash is taken over the CANONICAL json of the config (recursively
+    sorted keys, no insignificant whitespace, UTF-8), so reordering keys or
+    reformatting whitespace leaves the hash unchanged while any change to a value
+    changes it. It does NOT normalize value *content*: NFC vs NFD unicode, or an
+    int vs the same number written as a float, are treated as different models.
     """
     if isinstance(config_path, dict):
         data = config_path
@@ -253,7 +254,9 @@ def make_manifest(config_path, n_sims, seed, extra=None):
             data = json.load(f)
     canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return {
-        "config_hash": hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16],
+        # surrogatepass: a lone surrogate is valid JSON and json.load accepts it;
+        # plain utf-8 encode would raise, where the old raw-text path did not.
+        "config_hash": hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()[:16],
         "n_simulations": n_sims,
         "seed": seed,
         "kernel_version": "3.0.0",

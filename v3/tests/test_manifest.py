@@ -56,10 +56,37 @@ class TestManifestHash(unittest.TestCase):
             make_manifest(b, 100, 1)["config_hash"],
         )
 
-    def test_non_ascii_name_hashes_consistently(self):
-        # em dash in a name must not break hashing (ensure_ascii=False, UTF-8)
-        m = make_manifest({"name": "Indie SaaS — MRR"}, 100, 1)
-        self.assertRegex(m["config_hash"], r"^[0-9a-f]{16}$")
+    def test_nested_key_order_is_ignored(self):
+        # sort_keys is recursive: reordering keys inside a nested object must not
+        # change the hash.
+        a = {"parameters": {"p": {"distribution": "fixed", "params": {"value": 1}}}}
+        b = {"parameters": {"p": {"params": {"value": 1}, "distribution": "fixed"}}}
+        self.assertEqual(
+            make_manifest(a, 100, 1)["config_hash"],
+            make_manifest(b, 100, 1)["config_hash"],
+        )
+
+    def test_non_ascii_hashes_the_same_as_dict_and_ascii_escaped_file(self):
+        # An em dash + CJK config must hash identically whether it comes from a
+        # dict or a UTF-8 file whose bytes are ASCII-escaped on disk — proving the
+        # UTF-8 canonicalization, not the on-disk byte form, is what's hashed.
+        cfg = {"name": "Indie SaaS — MRR 增长", "n_simulations": 100}
+        with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as f:
+            json.dump(cfg, f, ensure_ascii=True, indent=2)  # escaped bytes on disk
+            path = f.name
+        try:
+            self.assertEqual(
+                make_manifest(cfg, 100, 1)["config_hash"],
+                make_manifest(path, 100, 1)["config_hash"],
+            )
+        finally:
+            os.unlink(path)
+
+    def test_lone_surrogate_does_not_crash(self):
+        # An unpaired surrogate is valid JSON and json.load accepts it; hashing
+        # must not raise (surrogatepass), unlike a plain utf-8 encode.
+        cfg = {"name": json.loads('"\\ud800"')}
+        self.assertRegex(make_manifest(cfg, 100, 1)["config_hash"], r"^[0-9a-f]{16}$")
 
 
 if __name__ == "__main__":
