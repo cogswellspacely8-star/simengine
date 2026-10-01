@@ -2,8 +2,8 @@
 
 > A domain-agnostic Monte Carlo simulation and decision-intelligence engine.
 > Zero third-party Python dependencies (stdlib only, Python 3.8+), one-file web
-> UI on port 8420, an HTTP API designed for AI agents, and an MCP server with 9
-> tools including a proceed/escalate decision gate. Open-core: the engine is
+> UI on port 8420, an HTTP API designed for AI agents, and an MCP server with 12
+> tools including a proceed/escalate decision gate and docs-wiki search. Open-core: the engine is
 > Apache-2.0; the hosted MCP service is commercial.
 
 Key facts for agents:
@@ -30,6 +30,9 @@ Key facts for agents:
 
 ## Docs
 
+- [Docs wiki home](docs/README.md): index of every doc by section; also served
+  over MCP via `list_docs` / `search_docs` / `read_doc` and `simengine://docs/...`
+  resources
 - [README](README.md): quick start, architecture, native acceleration
 - [Agent integration guide](v3/AGENT_INTEGRATION.md): how an AI agent builds,
   validates, runs, and interprets a simulation (curl for every endpoint)

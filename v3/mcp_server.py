@@ -37,10 +37,22 @@ from diagnostics import (
     convergence_analysis, sensitivity_analysis,
     deterministic_baseline, compare_to_baseline
 )
+import docs_wiki
 
 import glob as _glob
 
 DOMAIN_DIR = os.path.join(V3_DIR, "domains")
+
+
+def _server_version():
+    """__version__ from v3/__init__.py, read as text so script mode never imports the package."""
+    import re
+    try:
+        with open(os.path.join(V3_DIR, "__init__.py"), "r", encoding="utf-8") as f:
+            m = re.search(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]", f.read(), re.MULTILINE)
+        return m.group(1) if m else "0"
+    except OSError:
+        return "0"
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +283,41 @@ TOOLS = [
             "required": ["metric", "acceptable"],
         },
     },
+    {
+        "name": "list_docs",
+        "description": "List the SimEngine docs wiki: user guide, reference (schema, agent integration, decision gate, feeds), evidence (calibration backtest), runbooks, and design history. Returns each doc's id, title, section, and one-line summary. Read one with read_doc.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "section": {"type": "string", "description": "Only list docs in this section (e.g. 'guide', 'reference', 'evidence', 'runbooks', 'decisions-history')"},
+            },
+        },
+    },
+    {
+        "name": "search_docs",
+        "description": "Full-text search across the SimEngine docs wiki. Matches docs containing all query terms (falls back to any term), ranked by hits with a title boost, with line-numbered snippets.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search terms, e.g. 'cvar safety constraint'"},
+                "section": {"type": "string", "description": "Restrict to one section (see list_docs)"},
+                "limit": {"type": "integer", "description": "Max results (default: 10, max: 50)"},
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "read_doc",
+        "description": "Read a SimEngine doc by id from list_docs/search_docs (e.g. 'docs/schema-reference.md'). Pass 'heading' to read just one section of a long doc; an unknown heading returns the doc's headings.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "id": {"type": "string", "description": "Doc id, simengine:// URI, or docs-relative path"},
+                "heading": {"type": "string", "description": "Return only the section under this heading (case-insensitive)"},
+            },
+            "required": ["id"],
+        },
+    },
 ]
 
 
@@ -486,6 +533,19 @@ def handle_decide_under_uncertainty(args):
     }
 
 
+def handle_list_docs(args):
+    return docs_wiki.list_docs(section=args.get("section"))
+
+
+def handle_search_docs(args):
+    return docs_wiki.search_docs(args.get("query", ""), limit=args.get("limit", 10),
+                                 section=args.get("section"))
+
+
+def handle_read_doc(args):
+    return docs_wiki.read_doc(args.get("id", ""), heading=args.get("heading"))
+
+
 HANDLERS = {
     "simulate": handle_simulate,
     "list_domains": handle_list_domains,
@@ -496,6 +556,9 @@ HANDLERS = {
     "sensitivity_analysis": handle_sensitivity_analysis,
     "baseline_comparison": handle_baseline_comparison,
     "decide_under_uncertainty": handle_decide_under_uncertainty,
+    "list_docs": handle_list_docs,
+    "search_docs": handle_search_docs,
+    "read_doc": handle_read_doc,
 }
 
 
@@ -510,7 +573,13 @@ def run_with_mcp_sdk():
     from mcp.types import Tool, TextContent
     import asyncio
 
-    server = Server("simengine")
+    try:
+        server = Server("simengine", version=_server_version())
+    except TypeError:
+        server = Server("simengine")
+    if not all(hasattr(server, a) for a in ("list_tools", "call_tool", "list_resources", "read_resource")):
+        # mcp>=2 replaced the decorator API; the stdlib transport covers everything.
+        raise ImportError("installed MCP SDK lacks the decorator API")
 
     @server.list_tools()
     async def list_tools():
@@ -533,6 +602,26 @@ def run_with_mcp_sdk():
             return [TextContent(type="text", text=json.dumps(result, default=str))]
         except Exception as e:
             return [TextContent(type="text", text=json.dumps({"error": str(e)}))]
+
+    @server.list_resources()
+    async def list_resources():
+        from mcp.types import Resource
+        return [
+            Resource(uri=r["uri"], name=r["name"], description=r["description"],
+                     mimeType=r["mimeType"])
+            for r in docs_wiki.list_resources()
+        ]
+
+    @server.read_resource()
+    async def read_resource(uri):
+        content = docs_wiki.read_resource(str(uri))
+        if content is None:
+            raise ValueError("Resource not found: %s" % uri)
+        try:
+            from mcp.server.lowlevel.helper_types import ReadResourceContents
+        except ImportError:
+            return content["text"]
+        return [ReadResourceContents(content=content["text"], mime_type=content["mimeType"])]
 
     async def main():
         async with stdio_server() as (read_stream, write_stream):
@@ -566,8 +655,8 @@ def run_with_stdio_jsonrpc():
                 "jsonrpc": "2.0", "id": rid,
                 "result": {
                     "protocolVersion": "2024-11-05",
-                    "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "simengine", "version": "3.0.0"},
+                    "capabilities": {"tools": {}, "resources": {}},
+                    "serverInfo": {"name": "simengine", "version": _server_version()},
                 },
             }
 
@@ -579,6 +668,25 @@ def run_with_stdio_jsonrpc():
                 "jsonrpc": "2.0", "id": rid,
                 "result": {"tools": TOOLS},
             }
+
+        if method == "resources/list":
+            return {
+                "jsonrpc": "2.0", "id": rid,
+                "result": {"resources": docs_wiki.list_resources()},
+            }
+
+        if method == "resources/templates/list":
+            return {"jsonrpc": "2.0", "id": rid, "result": {"resourceTemplates": []}}
+
+        if method == "resources/read":
+            uri = params.get("uri", "")
+            content = docs_wiki.read_resource(uri)
+            if content is None:
+                return {
+                    "jsonrpc": "2.0", "id": rid,
+                    "error": {"code": -32002, "message": "Resource not found", "data": {"uri": uri}},
+                }
+            return {"jsonrpc": "2.0", "id": rid, "result": {"contents": [content]}}
 
         if method == "tools/call":
             tool_name = params.get("name", "")

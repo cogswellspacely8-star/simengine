@@ -170,9 +170,11 @@ Bump both its `version` and the package `version` in lockstep on every release.
    `https://registry.modelcontextprotocol.io/v0/servers?search=simengine`) and
    confirm the listing resolves to the PyPI package.
 2. In a fresh MCP client (Claude Desktop / Claude Code), add the server via the
-   registry entry and confirm all 9 tools appear: `simulate`, `list_domains`,
+   registry entry and confirm all 12 tools appear: `simulate`, `list_domains`,
    `validate_config`, `optimize`, `update_bayesian`, `convergence_check`,
-   `sensitivity_analysis`, `baseline_comparison`, `decide_under_uncertainty`.
+   `sensitivity_analysis`, `baseline_comparison`, `decide_under_uncertainty`,
+   `list_docs`, `search_docs`, `read_doc` (the doc tools serve only the bundled
+   agent guide from a wheel install unless `SIMENGINE_DOCS_DIR` is set).
 3. Confirm the pure-Python path still works with the SDK absent
    (`pip uninstall mcp` in the test env → `uvx simengine-mcp` still serves).
 
