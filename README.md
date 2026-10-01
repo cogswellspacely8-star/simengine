@@ -31,6 +31,7 @@ That is it. No `pip install`, no Docker, no Node, no build step. Python 3.8+ is 
     uvx simengine-mcp
 
 Listed on the [official MCP registry](https://registry.modelcontextprotocol.io/?search=simengine).
+Twelve tools: nine for simulation and decisions (`simulate`, `optimize`, `decide_under_uncertainty`, ...) and three for reading the [docs wiki](docs/README.md) (`list_docs`, `search_docs`, `read_doc`).
 Hosted, no-install endpoint: [join the waitlist](https://cogswellspacely8-star.github.io/simengine-site/#waitlist).
 
 ## Optional Native Acceleration
@@ -892,6 +893,8 @@ Safety constraints translate directly to decision language:
 ## Documentation
 
 **New to SimEngine? Start with the [plain-language guide](docs/guide/).** It explains what SimEngine is, how to read results, who it is for, how to explain it to others, and how to model your own decision — no background required.
+
+Everything else — reference, the calibration backtest, runbooks, and design history — is indexed on the **[docs wiki home](docs/README.md)**. The same wiki is available to AI agents over MCP: `list_docs`, `search_docs`, and `read_doc` tools, plus every page as a `simengine://docs/...` resource. A wheel install (`uvx simengine-mcp`) bundles only the agent integration guide; set `SIMENGINE_DOCS_DIR` to a checkout's `docs/` to serve the full wiki.
 
 Peer review reports and the system design paper are available on request. Contact the maintainer for access.
 

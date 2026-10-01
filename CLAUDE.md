@@ -56,14 +56,17 @@ v3/                        ALL production code lives here
   backtest_data/           Committed FRED CSV snapshots (UNRATE/CPIAUCSL/INDPRO) so the backtest is reproducible offline
   validation.py            Canonical config validation (shared by server + llm compiler); never raises on bad shapes
   native.py                Optional Rust loader + Python fallback glue
-  mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)
+  mcp_server.py            MCP tool exposure (12 tools incl. decide_under_uncertainty + list_docs/search_docs/read_doc) and docs resources
+  docs_wiki.py             Docs wiki index/search/read for MCP; catalog = docs/README.md (orphan + link check in tests/test_docs_wiki.py)
   sim_ask.py               CLI: ask a plain-language question -> config -> run -> explain
   static/index.html        Vanilla SPA UI (one file) — incl. Ask-anything + Predictions modals
   domains/                 Example JSON configs (saas, real_estate, nba_finals_2026, btc, fed, etc.)
   schema/                  domain.schema.json — published JSON Schema, served at GET /api/schema
   feeds/                   OPT-IN real-time data adapters (Polymarket Gamma); stdlib urllib only
   llm/                     OPT-IN natural-language front door (backends, compiler, clarify, explain, ask); stdlib urllib only
+  AGENT_INTEGRATION.md     HTTP agent guide (bundled in the wheel; served by read_doc)
   tests/                   unittest suites (200+; jsonschema contract test skips if lib absent)
+docs/                      The docs wiki. README.md is the home/index — every page must be listed there (test-enforced)
 crates/
   simengine-core/          Pure Rust numeric kernels
   simengine-py/            PyO3 bridge (module: simengine_native)
@@ -109,6 +112,7 @@ server.json                 MCP registry manifest; version must match pyproject.
 - `SIMENGINE_DISABLE_NATIVE_EXPR_SAMPLING=1` — disable native binomial fast path
 - `SIMENGINE_DISABLE_EXPR_CACHE=1` — disable parsed-expression cache
 - `SIMENGINE_DISABLE_SAFE_EXPR_CACHE=1` — disable diagnostics AST cache
+- `SIMENGINE_DOCS_DIR` — docs wiki directory served by the MCP doc tools (default: `docs/` next to `v3/`; wheel installs only bundle `v3/AGENT_INTEGRATION.md`)
 
 ### LLM front door (`v3/llm/`, `sim_ask.py`, `/api/ask`)
 

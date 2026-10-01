@@ -18,6 +18,7 @@ EXPECTED_TOOLS = {
     "simulate", "list_domains", "validate_config", "optimize",
     "update_bayesian", "convergence_check", "sensitivity_analysis",
     "baseline_comparison", "decide_under_uncertainty",
+    "list_docs", "search_docs", "read_doc",
 }
 
 
