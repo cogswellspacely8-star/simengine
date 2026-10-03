@@ -320,12 +320,14 @@ class TestEvalExpr(unittest.TestCase):
         result = kernel.eval_expr("this is not valid python +++ !!!", {})
         self.assertEqual(result, 0)
 
+    # One unique expression costs two compile() calls: ast.parse (the
+    # allow-list screen) and the bytecode compile of the screened tree.
     def test_compile_cache_reuses_compiled_expression(self):
         with mock.patch("builtins.compile", wraps=compile) as compile_mock:
             self.assertEqual(kernel.eval_expr("x + 1", {"x": 2}), 3)
             self.assertEqual(kernel.eval_expr("x + 1", {"x": 4}), 5)
 
-        self.assertEqual(compile_mock.call_count, 1)
+        self.assertEqual(compile_mock.call_count, 2)
 
     def test_compile_cache_can_be_disabled(self):
         with mock.patch.dict(os.environ, {"SIMENGINE_DISABLE_EXPR_CACHE": "1"}):
@@ -333,7 +335,7 @@ class TestEvalExpr(unittest.TestCase):
                 self.assertEqual(kernel.eval_expr("x + 1", {"x": 2}), 3)
                 self.assertEqual(kernel.eval_expr("x + 1", {"x": 4}), 5)
 
-        self.assertEqual(compile_mock.call_count, 2)
+        self.assertEqual(compile_mock.call_count, 4)
 
     def test_invalid_expression_is_cached(self):
         with mock.patch("builtins.compile", wraps=compile) as compile_mock:

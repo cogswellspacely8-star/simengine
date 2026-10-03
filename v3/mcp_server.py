@@ -29,6 +29,7 @@ V3_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, V3_DIR)
 
 from kernel import (
+    KERNEL_VERSION,
     DomainConfig, run_monte_carlo, evaluate_safety,
     compute_fitness, evolve, SAMPLERS
 )
@@ -567,7 +568,7 @@ def run_with_stdio_jsonrpc():
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "simengine", "version": "3.0.0"},
+                    "serverInfo": {"name": "simengine", "version": KERNEL_VERSION},
                 },
             }
 

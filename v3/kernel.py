@@ -13,7 +13,7 @@ Design informed by:
   - ChatGPT-4o critique (March 2026)
 """
 
-import json, random, math, copy, time, statistics, sys, hashlib, os
+import ast, json, random, math, copy, time, statistics, sys, hashlib, os, threading
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -22,6 +22,17 @@ try:
     import native as native_runtime
 except Exception:
     native_runtime = None
+
+# Single source of truth for the engine version stamped into manifests and the
+# MCP serverInfo. Must match pyproject.toml / v3/__init__.py / server.json
+# (test_packaging_invariants enforces the lockstep).
+KERNEL_VERSION = "3.0.1"
+
+# Monte Carlo runs seed and draw from the process-global `random` module. Under
+# ThreadingHTTPServer two concurrent /api/simulate requests would otherwise
+# interleave draws and break seed reproducibility, so runs are serialized.
+# Reentrant because evolve() -> _worker() -> run_monte_carlo() nests in-process.
+SIM_LOCK = threading.RLock()
 
 # ---------------------------------------------------------------------------
 # Distribution Samplers
@@ -57,11 +68,19 @@ def _bernoulli(p): return 1.0 if random.random() < p["p"] else 0.0
 
 @sampler("poisson")
 def _poisson(p):
-    L = math.exp(-p["lambda"])
-    k, pr = 0, 1.0
-    while pr > L:
-        k += 1; pr *= random.random()
-    return float(k - 1)
+    # Exponential inter-arrival form of Knuth's method: count arrivals of a
+    # unit-rate Poisson process before time lambda. Exact for any lambda and
+    # immune to the exp(-lambda) underflow that capped the product form at
+    # ~745 regardless of lambda (lambda=2000 used to return ~720).
+    lam = float(p["lambda"])
+    if lam <= 0:
+        return 0.0
+    k, t = 0, 0.0
+    while True:
+        t -= math.log(1.0 - random.random())
+        if t > lam:
+            return float(k)
+        k += 1
 
 @sampler("student_t")
 def _student_t(p):
@@ -162,6 +181,17 @@ def apply_correlation_to_sample(base_value, var_def, correlated_z):
         median, spread = params.get("median", 1), params.get("spread", 0.5)
         v = median * math.exp(spread * correlated_z)
         return max(params.get("min", 0), min(params.get("max", 1e18), v))
+    elif dist == "student_t":
+        # Gaussian-copula t: the correlated z supplies the numerator so the
+        # dependence structure survives; an independent chi-square supplies the
+        # fat tail, matching the marginal sampler. Previously fell through to
+        # `return base_value` (= 0): a correlated student_t variable was
+        # silently constant zero.
+        df = max(1, int(round(params.get("df", 5))))
+        v = sum(random.gauss(0, 1) ** 2 for _ in range(df))
+        t = correlated_z / math.sqrt(v / df) if v > 0 else correlated_z
+        result = params.get("mean", 0) + params.get("scale", 1) * t
+        return max(params.get("min", -1e18), min(params.get("max", 1e18), result))
     elif dist == "bernoulli":
         return 1.0 if u < params.get("p", 0.5) else 0.0
     elif dist == "poisson":
@@ -192,27 +222,105 @@ NATIVE_BATCH_SAMPLER_DISTRIBUTIONS = {
 
 _INVALID_EXPR = object()
 _COMPILED_EXPR_CACHE = {}
+# Bound the compiled-expression cache. Configs are user/LLM-authored, so a long
+# running server would otherwise accumulate one entry per distinct expression
+# string it has ever seen.
+_COMPILED_EXPR_CACHE_MAX = 4096
+
+# Expression syntax the kernel will evaluate. Expressions are arithmetic over
+# plain names and whitelisted calls; everything that could reach past the
+# `SAFE_BUILTINS` namespace (attribute access, subscripts, lambdas,
+# comprehensions, walrus, starred, f-strings, dunder names) is rejected BEFORE
+# compile. validation.py flags the same constructs with friendlier messages;
+# this is the enforcement point that holds even when a config bypasses
+# /api/validate (inline /api/simulate, MCP tools, library use).
+_FORBIDDEN_EXPR_NODES = (
+    ast.Attribute, ast.Subscript, ast.Lambda, ast.ListComp, ast.SetComp,
+    ast.DictComp, ast.GeneratorExp, ast.NamedExpr, ast.Starred, ast.JoinedStr,
+    ast.Await, ast.Yield, ast.YieldFrom,
+)
+
+
+def _tree_violation(tree):
+    for node in ast.walk(tree):
+        if isinstance(node, _FORBIDDEN_EXPR_NODES):
+            return f"{type(node).__name__} is not allowed in expressions"
+        if isinstance(node, ast.Name) and node.id.startswith("__"):
+            return f"name '{node.id}' is not allowed in expressions"
+    return None
+
+
+def expression_violation(expr):
+    """Return a human-readable reason this expression is not allowed, else None."""
+    if not isinstance(expr, str):
+        return "expression must be a string"
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except (SyntaxError, ValueError) as e:
+        return f"invalid syntax ({getattr(e, 'msg', e)})"
+    return _tree_violation(tree)
+
+
+def iter_config_expressions(data):
+    """Yield (label, expr) for every expression string a config asks the kernel
+    to evaluate: step_logic, accumulators, metrics, fitness components."""
+    for i, step in enumerate(data.get("step_logic", []) or []):
+        if isinstance(step, dict) and "expr" in step:
+            yield (f"step_logic[{i}]", step["expr"])
+    acc = data.get("accumulators")
+    if isinstance(acc, dict):
+        for k, v in acc.items():
+            yield (f"accumulator '{k}'", v)
+    metrics = data.get("metrics")
+    if isinstance(metrics, dict):
+        for k, m in metrics.items():
+            if isinstance(m, dict) and "expr" in m:
+                yield (f"metric '{k}'", m["expr"])
+    fitness = data.get("fitness")
+    if isinstance(fitness, dict):
+        for i, comp in enumerate(fitness.get("components", []) or []):
+            if isinstance(comp, dict) and "expr" in comp:
+                yield (f"fitness.components[{i}]", comp["expr"])
+
+
+def check_config_expressions(data):
+    """Raise ValueError naming the first expression that uses forbidden syntax."""
+    for label, expr in iter_config_expressions(data):
+        reason = expression_violation(expr)
+        if reason is not None:
+            raise ValueError(f"{label}: {reason}")
+
 
 def clear_eval_expr_cache():
     _COMPILED_EXPR_CACHE.clear()
 
 
+def _compile_expr_unchecked(expr):
+    # Parse once, screen the tree, then compile the same tree to bytecode
+    # (two compile() calls per unique expression; the cache makes that once).
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except Exception:
+        return _INVALID_EXPR
+    if _tree_violation(tree) is not None:
+        return _INVALID_EXPR
+    try:
+        return compile(tree, "<simengine-expr>", "eval")
+    except Exception:
+        return _INVALID_EXPR
+
+
 def _compile_expr_cached(expr):
     if os.environ.get("SIMENGINE_DISABLE_EXPR_CACHE"):
-        try:
-            return compile(expr, "<simengine-expr>", "eval")
-        except Exception:
-            return _INVALID_EXPR
+        return _compile_expr_unchecked(expr)
 
     cached = _COMPILED_EXPR_CACHE.get(expr)
     if cached is not None:
         return cached
 
-    try:
-        compiled = compile(expr, "<simengine-expr>", "eval")
-    except Exception:
-        compiled = _INVALID_EXPR
-
+    compiled = _compile_expr_unchecked(expr)
+    if len(_COMPILED_EXPR_CACHE) >= _COMPILED_EXPR_CACHE_MAX:
+        _COMPILED_EXPR_CACHE.clear()
     _COMPILED_EXPR_CACHE[expr] = compiled
     return compiled
 
@@ -223,7 +331,7 @@ def eval_expr(expr, state):
         return 0
     try:
         return eval(compiled, {"__builtins__": SAFE_BUILTINS}, state)
-    except:
+    except Exception:
         return 0
 
 def sample_var(var_def, state):
@@ -259,7 +367,7 @@ def make_manifest(config_path, n_sims, seed, extra=None):
         "config_hash": hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()[:16],
         "n_simulations": n_sims,
         "seed": seed,
-        "kernel_version": "3.0.0",
+        "kernel_version": KERNEL_VERSION,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "extra": extra or {},
     }
@@ -317,6 +425,11 @@ class DomainConfig:
         
         # v3: calibration metadata
         self.calibration = data.get("calibration", {})
+
+        # Enforce the expression allow-list at load time so a config using
+        # forbidden syntax fails loudly (ValueError -> HTTP 400 / tool error)
+        # instead of silently evaluating to 0 or reaching eval() at all.
+        check_config_expressions(data)
 
         # v3.1: correlations between variables
         # Format: [{"vars": ["var_a", "var_b"], "rho": 0.6}, ...]
@@ -496,13 +609,16 @@ def _compute_stats_python(all_metrics, metric_formats):
             continue
         sv = sorted(vals)
         stats[mname] = {
-            "mean": round(statistics.mean(vals), 2),
-            "median": round(statistics.median(vals), 2),
-            "std": round(statistics.stdev(vals), 2) if len(vals) > 1 else 0,
-            "p10": round(percentile(sv, 10), 2),
-            "p25": round(percentile(sv, 25), 2),
-            "p75": round(percentile(sv, 75), 2),
-            "p90": round(percentile(sv, 90), 2),
+            # 4 dp, not 2: metrics on a 0..1 scale (rates, probabilities) lost
+            # everything past the hundredths. Mirrored in the native reducer
+            # (crates/simengine-core/src/stats.rs).
+            "mean": round(statistics.mean(vals), 4),
+            "median": round(statistics.median(vals), 4),
+            "std": round(statistics.stdev(vals), 4) if len(vals) > 1 else 0,
+            "p10": round(percentile(sv, 10), 4),
+            "p25": round(percentile(sv, 25), 4),
+            "p75": round(percentile(sv, 75), 4),
+            "p90": round(percentile(sv, 90), 4),
             "format": metric_formats.get(mname, "number"),
         }
     return stats
@@ -638,6 +754,11 @@ def _evaluate_safety_python(raw, safety_config):
 
 
 def run_monte_carlo(config, seed=None, n_override=None):
+    with SIM_LOCK:
+        return _run_monte_carlo_locked(config, seed=seed, n_override=n_override)
+
+
+def _run_monte_carlo_locked(config, seed=None, n_override=None):
     n = n_override or config.n_simulations
     if seed is not None:
         random.seed(seed)
@@ -748,7 +869,12 @@ def compute_fitness(mc_result, fitness_def, safety_config=None, safety_result=No
             # Count violations and apply penalty
             n_violations = sum(1 for c in safety["chance"] if not c["passed"])
             n_violations += sum(1 for c in safety["cvar"] if not c["passed"])
-            total *= max(0.1, 1.0 - 0.3 * n_violations)  # 30% penalty per violation
+            # 30% penalty per violation, floored at 10% of the unpenalized score.
+            # Applied sign-safely: a multiplicative shrink toward zero REWARDS a
+            # negative fitness (-100 * 0.7 = -70 ranks above -100), so negative
+            # scores are pushed further from zero by the same proportion instead.
+            factor = max(0.1, 1.0 - 0.3 * n_violations)
+            total = total * factor if total >= 0 else total * (2.0 - factor)
     
     return round(total, 2)
 
@@ -838,9 +964,16 @@ def crossover(a, b, tunable):
 
 
 def _worker(args):
-    config_dict, fitness_def, safety_config, run_id = args
+    # args: (config_dict, fitness_def, safety_config, run_id[, seed]). The
+    # optional seed is the generation's common-random-numbers seed: every
+    # candidate in a generation is scored on the same draws, so fitness
+    # differences reflect the levers, not sampling luck (same idea as the CRN
+    # sensitivity analysis). Elites are re-scored each generation on fresh
+    # draws, which stops one lucky evaluation from locking in as best_ever.
+    config_dict, fitness_def, safety_config, run_id = args[:4]
+    seed = args[4] if len(args) > 4 else None
     cfg = DomainConfig.from_dict(config_dict)
-    mc = run_monte_carlo(cfg, n_override=min(cfg.n_simulations, 2000))
+    mc = run_monte_carlo(cfg, seed=seed, n_override=min(cfg.n_simulations, 2000))
     safety = evaluate_safety(mc, safety_config) if safety_config else {"all_passed": True}
     fitness = compute_fitness(mc, fitness_def, safety_config, safety_result=safety)
     
@@ -876,8 +1009,13 @@ def evolve(domain_path_or_dict, generations=15, population=20,
             "Add a tunable list of {\"path\": ..., \"range\": [lo, hi]} entries."
         )
     
+    # Common random numbers per generation (see _worker). Derived from the
+    # config seed when present so a seeded evolve() is fully reproducible.
+    ga_seed = int(config.seed) if config.seed is not None else random.getrandbits(32)
+    random.seed(ga_seed)
     manifest = make_manifest(base_dict, config.n_simulations, config.seed,
-                             {"generations": generations, "population": population})
+                             {"generations": generations, "population": population,
+                              "ga_seed": ga_seed})
     
     if verbose:
         print(f"SimEngine v3 Evolve: {config.name}")
@@ -907,7 +1045,9 @@ def evolve(domain_path_or_dict, generations=15, population=20,
     for gen in range(generations):
         t0 = time.time()
         
-        items = [(cfg, fitness_def, safety_config, f"g{gen}_i{i}") for i, cfg in enumerate(pop)]
+        gen_seed = (ga_seed + 7919 * (gen + 1)) & 0xFFFFFFFF
+        items = [(cfg, fitness_def, safety_config, f"g{gen}_i{i}", gen_seed)
+                 for i, cfg in enumerate(pop)]
         
         scored = []
         if workers > 1:

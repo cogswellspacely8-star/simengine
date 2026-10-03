@@ -24,7 +24,7 @@ import statistics
 import copy
 
 
-def beta_binomial_update(prior_params, observations):
+def beta_binomial_update(prior_params, observations, n_pseudo=10):
     """
     Update a rate/probability parameter using Beta-Binomial conjugate.
 
@@ -48,9 +48,9 @@ def beta_binomial_update(prior_params, observations):
     else:
         return prior_params
 
-    # Convert prior mean to Beta parameters
-    # Use method of moments with a moderate concentration (n_pseudo = 10)
-    n_pseudo = 10
+    # Convert prior mean to Beta parameters by method of moments. n_pseudo is
+    # the prior's concentration in pseudo-observations (default 10; callers
+    # that built the prior with a known strength pass it through).
     alpha_prior = max(1, prior_mean * n_pseudo)
     beta_prior = max(1, (1 - prior_mean) * n_pseudo)
 
@@ -112,7 +112,7 @@ def beta_binomial_update(prior_params, observations):
     }
 
 
-def gamma_poisson_update(prior_params, observations):
+def gamma_poisson_update(prior_params, observations, n_pseudo=5):
     """
     Update a count parameter using Gamma-Poisson conjugate.
 
@@ -130,9 +130,8 @@ def gamma_poisson_update(prior_params, observations):
     else:
         return prior_params
 
-    # Gamma prior: shape=alpha, rate=beta
-    # Mean = alpha/beta. Use moderate prior (n_pseudo = 5)
-    n_pseudo = 5
+    # Gamma prior: shape=alpha, rate=beta. Mean = alpha/beta. n_pseudo is the
+    # prior's concentration in pseudo-observations (default 5).
     alpha_prior = max(1, prior_mean * n_pseudo)
     beta_prior = n_pseudo
 
@@ -305,6 +304,17 @@ def update_parameter(variable_def, observations, method=None):
     else:
         updater = infer_method(variable_def)
 
+    # Prior concentration (pseudo-observations) declared on the variable, e.g.
+    # by feeds/polymarket.prior_variable(strength=...). Without this the
+    # updater's default pseudo-count silently overrode whatever strength the
+    # prior was built with, so `strength` was decorative.
+    cal = variable_def.get("calibration") or {}
+    strength = cal.get("prior_strength")
+    if strength is not None and updater in (beta_binomial_update, gamma_poisson_update):
+        strength = float(strength)
+        if strength <= 0:
+            raise ValueError("calibration.prior_strength must be positive")
+        return updater(variable_def["params"], observations, n_pseudo=strength)
     return updater(variable_def["params"], observations)
 
 

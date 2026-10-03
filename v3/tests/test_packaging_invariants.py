@@ -101,6 +101,20 @@ class TestVersionLockstep(unittest.TestCase):
             % (pyproject_version, init_version, server_json_version),
         )
 
+    def test_kernel_and_mcp_server_info_versions_match(self):
+        # kernel.KERNEL_VERSION stamps every manifest and the MCP serverInfo
+        # (mcp_server.py imports it). Both used to be hardcoded "3.0.0" and
+        # drifted from the 3.0.1 release.
+        sys_path = os.path.join(REPO_ROOT, "v3")
+        import sys
+        if sys_path not in sys.path:
+            sys.path.insert(0, sys_path)
+        import kernel
+        self.assertEqual(kernel.KERNEL_VERSION, self._pyproject_version())
+        mcp_src = open(os.path.join(REPO_ROOT, "v3", "mcp_server.py"), encoding="utf-8").read()
+        self.assertNotRegex(mcp_src, r'"version":\s*"\d+\.\d+\.\d+"',
+                            "mcp_server.py must take its version from kernel.KERNEL_VERSION")
+
     def test_server_json_package_version_matches_top_level(self):
         # docs/PUBLISHING-MCP-REGISTRY.md: packages[0].version bumps in
         # lockstep with the top-level version (and hence all three files).

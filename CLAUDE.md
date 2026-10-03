@@ -63,7 +63,7 @@ v3/                        ALL production code lives here
   schema/                  domain.schema.json — published JSON Schema, served at GET /api/schema
   feeds/                   OPT-IN real-time data adapters (Polymarket Gamma); stdlib urllib only
   llm/                     OPT-IN natural-language front door (backends, compiler, clarify, explain, ask); stdlib urllib only
-  tests/                   unittest suites (200+; jsonschema contract test skips if lib absent)
+  tests/                   unittest suites (340+; jsonschema contract test skips if lib absent)
 crates/
   simengine-core/          Pure Rust numeric kernels
   simengine-py/            PyO3 bridge (module: simengine_native)
@@ -83,12 +83,15 @@ server.json                 MCP registry manifest; version must match pyproject.
 2. If you touched a Rust crate: `make rust-test` and `make native-bench`
 3. If you touched the kernel or distributions: run a known domain config (e.g. `v3/domains/business_pipeline_v3.json`) and confirm the histogram + risk gauge make sense
 4. If you touched the API: hit `/api/health` and POST a config to `/api/simulate` with curl
+   (metric stats are 4 dp in both the Python and Rust reducers — keep them in lockstep)
 5. If you touched the UI: open `http://localhost:8420` and exercise the affected feature
 6. **Most important:** confirm the pure-Python path still works without the Rust extension. `SIMENGINE_DISABLE_NATIVE_SAMPLING=1 python3 v3/server.py` should produce identical results (within Monte Carlo noise) to the native path.
 
 ## Don't do
 
 - Don't add a Python dependency to `v3/`. The pure-stdlib promise is the brand.
+- Don't loosen the expression allow-list in `kernel.py` (`_FORBIDDEN_EXPR_NODES`, enforced in `DomainConfig.__init__` and again in `eval_expr`). It is what keeps `eval()` contained for inline and LLM-authored configs; `validation.py` only adds friendlier messages on top of it.
+- Don't call `random.seed()` or draw from the global RNG in new engine code outside `kernel.SIM_LOCK`. `run_monte_carlo` serializes on that lock so seeded runs stay reproducible under `ThreadingHTTPServer`.
 - Don't add a frontend build step. The UI is one HTML file by design.
 - Don't make the Rust extension required. It must remain opt-in with graceful fallback.
 - Don't change the default port (8420) without updating `mcp_config.json`, all docs, and any agent integrations that hardcoded it.
@@ -99,7 +102,7 @@ server.json                 MCP registry manifest; version must match pyproject.
 
 `v3/` is also published as the zero-dependency PyPI package `simengine-mcp` (console script `simengine-mcp`, runnable via `uvx simengine-mcp` with no install step).
 
-- **Version lockstep, enforced.** `version` in `pyproject.toml`, `__version__` in `v3/__init__.py`, and `version` in `server.json` must be identical. `v3/tests/test_packaging_invariants.py` fails the suite if they drift.
+- **Version lockstep, enforced.** `version` in `pyproject.toml`, `__version__` in `v3/__init__.py`, `version` in `server.json`, and `KERNEL_VERSION` in `v3/kernel.py` (stamped into manifests and the MCP `serverInfo`) must be identical. `v3/tests/test_packaging_invariants.py` fails the suite if they drift.
 - **`v3/__init__.py` carries a sys.path bootstrap** needed only by the installed package (so its sibling flat imports like `from kernel import ...` still resolve under the `simengine_mcp` package name). It must stay inert in-repo — no `import v3` or `from v3 import` anywhere in the tree. Also test-enforced, same file.
 - **Releasing:** follow `docs/PUBLISHING-MCP-REGISTRY.md`.
 

@@ -326,12 +326,19 @@ count.
 
 Arithmetic, comparisons, and the ternary form `A if C else B`.
 
-### Not allowed (flagged as errors)
+### Not allowed (rejected)
 
 - Lambdas.
 - Comprehensions (list / set / dict / generator).
 - Attribute / dotted access (`x.y`).
+- Subscripts (`x[0]`), walrus, starred, f-strings.
+- Names beginning with `__`.
 - Any name not in the allowed set above.
+
+The syntax rules are enforced by the kernel itself when a config loads
+(`DomainConfig` raises `ValueError`; the HTTP API answers 400, MCP tools return
+an error), not only by `validate_config`. Unknown names are a validator-only
+check: the kernel evaluates them to 0.
 
 ---
 

@@ -80,13 +80,13 @@ pub fn reduce_metrics(
         reduced.insert(
             metric_name.clone(),
             MetricStats {
-                mean: round_to(mean, 2),
-                median: round_to(median, 2),
-                std: round_to(std, 2),
-                p10: round_to(percentile_sorted(&sorted_values, 10.0), 2),
-                p25: round_to(percentile_sorted(&sorted_values, 25.0), 2),
-                p75: round_to(percentile_sorted(&sorted_values, 75.0), 2),
-                p90: round_to(percentile_sorted(&sorted_values, 90.0), 2),
+                mean: round_to(mean, 4),
+                median: round_to(median, 4),
+                std: round_to(std, 4),
+                p10: round_to(percentile_sorted(&sorted_values, 10.0), 4),
+                p25: round_to(percentile_sorted(&sorted_values, 25.0), 4),
+                p75: round_to(percentile_sorted(&sorted_values, 75.0), 4),
+                p90: round_to(percentile_sorted(&sorted_values, 90.0), 4),
                 format,
             },
         );

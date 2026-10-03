@@ -90,6 +90,9 @@ def prior_variable(probability, strength=20):
                       f"(Beta prior, strength {strength})",
             "updatable": True,
             "update_method": "beta_binomial",
+            # Carried into bayesian.update_parameter as the Beta pseudo-count,
+            # so the market's weight survives into the posterior.
+            "prior_strength": strength,
         },
     }
 

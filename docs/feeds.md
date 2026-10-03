@@ -31,7 +31,10 @@ Price in → prior → posterior, not price in → price out.
 
 `strength` is the prior's concentration in pseudo-observations: higher = more
 confident the market is right. 20 is a sane default; lower it if you trust the
-market less.
+market less. It is recorded on the variable as `calibration.prior_strength`,
+and `bayesian.update_parameter` uses it as the Beta prior's pseudo-count, so
+the weight you give the market survives into the posterior (a strength-200
+prior barely moves on ten observations; a strength-5 prior follows them).
 
 ### Worked example
 

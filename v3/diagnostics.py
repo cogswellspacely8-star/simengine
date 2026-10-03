@@ -24,7 +24,7 @@ from typing import Optional
 from kernel import (
     DomainConfig, run_monte_carlo, simulate_one,
     compute_fitness, percentile as _percentile, SAMPLERS, sampler,
-    _prepare_native_presampled_runs
+    _prepare_native_presampled_runs, SIM_LOCK
 )
 
 try:
@@ -54,11 +54,11 @@ def _checkpoint_stats(values, metric_name):
 
     sorted_values = sorted(values)
     return {
-        "mean": round(statistics.mean(values), 2),
-        "median": round(statistics.median(values), 2),
-        "std": round(statistics.stdev(values), 2) if len(values) > 1 else 0,
-        "p10": round(_percentile(sorted_values, 10), 2),
-        "p90": round(_percentile(sorted_values, 90), 2),
+        "mean": round(statistics.mean(values), 4),
+        "median": round(statistics.median(values), 4),
+        "std": round(statistics.stdev(values), 4) if len(values) > 1 else 0,
+        "p10": round(_percentile(sorted_values, 10), 4),
+        "p90": round(_percentile(sorted_values, 90), 4),
     }
 
 
@@ -91,23 +91,26 @@ def convergence_analysis(config: DomainConfig,
     if metric is None:
         metric = list(config.metrics.keys())[0]
     
-    random.seed(seed)
-    native_backend = _get_native_backend()
-    presampled_runs = _prepare_native_presampled_runs(
-        config, max(checkpoints), seed=seed, native_backend=native_backend
-    )
-    
-    # Run all simulations at once, then subsample
-    all_values = []
-    for run_index in range(max(checkpoints)):
-        result = simulate_one(
-            config,
-            sampled_steps=presampled_runs[run_index] if presampled_runs else None,
+    # Serialized like run_monte_carlo: this loop seeds and draws from the
+    # process-global RNG directly.
+    with SIM_LOCK:
+        random.seed(seed)
+        native_backend = _get_native_backend()
+        presampled_runs = _prepare_native_presampled_runs(
+            config, max(checkpoints), seed=seed, native_backend=native_backend
         )
-        # Extract the target metric from final state
-        state = result["final_state"]
-        state.update(result["metrics"])
-        all_values.append(result["metrics"].get(metric, 0))
+    
+        # Run all simulations at once, then subsample
+        all_values = []
+        for run_index in range(max(checkpoints)):
+            result = simulate_one(
+                config,
+                sampled_steps=presampled_runs[run_index] if presampled_runs else None,
+            )
+            # Extract the target metric from final state
+            state = result["final_state"]
+            state.update(result["metrics"])
+            all_values.append(result["metrics"].get(metric, 0))
     
     # Compute statistics at each checkpoint
     records = []

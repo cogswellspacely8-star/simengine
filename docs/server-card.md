@@ -38,8 +38,9 @@ What makes it trustworthy rather than merely plausible:
   grades them against reality (Brier / log-loss / CRPS, reliability curve),
   so calibration is a number, not a claim.
 - **Safe to run anywhere.** Pure Python stdlib (3.8+), zero dependencies,
-  local-first; expressions evaluate in a whitelisted AST sandbox, never
-  `eval()`.
+  local-first; every config expression is screened against an AST allow-list
+  (no attribute access, subscripts, lambdas, comprehensions or dunder names)
+  before it is compiled and evaluated under a whitelisted builtins namespace.
 
 Calls are synchronous: `simulate` returns full results in the same response
 (typical run: a few seconds).
