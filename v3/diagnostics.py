@@ -379,8 +379,21 @@ def deterministic_baseline(config: DomainConfig) -> dict:
             point_est = 1.0 if params.get("p", 0) >= 0.5 else 0.0
         elif dist == "poisson":
             point_est = params["lambda"]
-        elif dist == "choice":
-            point_est = params["options"][0]
+        elif dist == "student_t":
+            point_est = params.get("mean", 0)
+        elif dist == "beta":
+            lo, hi = params.get("low", 0.0), params.get("high", 1.0)
+            a, b = params["alpha"], params["beta"]
+            point_est = lo + (hi - lo) * a / (a + b)
+        elif dist == "gamma":
+            scale = params["scale"] if "scale" in params else 1.0 / params["rate"]
+            point_est = params["shape"] * scale
+        elif dist == "categorical":
+            values = params["values"]
+            probs = params.get("probs")
+            point_est = values[max(range(len(values)), key=lambda i: probs[i])] if probs else values[0]
+        elif dist == "empirical":
+            point_est = statistics.median(params["values"])
         else:
             point_est = 0
         

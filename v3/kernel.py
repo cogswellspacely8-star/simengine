@@ -93,6 +93,52 @@ def _student_t(p):
     result = p.get("mean", 0) + p.get("scale", 1) * t
     return max(p.get("min", -1e18), min(p.get("max", 1e18), result))
 
+@sampler("beta")
+def _beta(p):
+    # Beta(alpha, beta) on [low, high] (defaults [0, 1]). First-class so a
+    # Beta-Binomial posterior can be sampled exactly instead of being squashed
+    # back into a triangular.
+    lo, hi = p.get("low", 0.0), p.get("high", 1.0)
+    return lo + (hi - lo) * random.betavariate(p["alpha"], p["beta"])
+
+@sampler("gamma")
+def _gamma(p):
+    # Gamma(shape, scale); accepts `rate` (= 1/scale) instead of `scale`.
+    scale = p["scale"] if "scale" in p else 1.0 / p["rate"]
+    return random.gammavariate(p["shape"], scale)
+
+@sampler("categorical")
+def _categorical(p):
+    # Discrete outcome from `values` with optional `probs` (normalized;
+    # uniform when absent). Values are usually numbers so expressions can
+    # compare them (regime == 2), but any JSON scalar is allowed.
+    values = p["values"]
+    probs = p.get("probs")
+    if probs:
+        return random.choices(values, weights=probs, k=1)[0]
+    return random.choice(values)
+
+@sampler("empirical")
+def _empirical(p):
+    # Bootstrap from observed `values`; optional gaussian `jitter` (a std)
+    # turns it into a smoothed (kernel-density) bootstrap.
+    v = random.choice(p["values"])
+    jitter = p.get("jitter", 0)
+    return v + random.gauss(0, jitter) if jitter else v
+
+# Param keys each sampler requires. validation.py reads this so a missing key
+# is a named design-time error instead of a KeyError inside the test run.
+# A "$name" late-binding string satisfies a requirement. `gamma` needs one of
+# scale/rate (checked separately in validation).
+REQUIRED_PARAMS = {
+    "fixed": ("value",), "uniform": ("low", "high"),
+    "triangular": ("low", "mode", "high"), "normal": ("mean", "std"),
+    "lognormal": ("median", "spread"), "bernoulli": ("p",),
+    "poisson": ("lambda",), "student_t": (),
+    "beta": ("alpha", "beta"), "gamma": ("shape",),
+    "categorical": ("values",), "empirical": ("values",),
+}
+
 def _binomial(n, p):
     trials = max(0, int(round(n)))
     probability = _clamp(float(p), 0.0, 1.0)
@@ -159,8 +205,47 @@ def normal_cdf_approx(x):
     p = d * math.exp(-x * x / 2.0) * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
     return 1.0 - p if x > 0 else p
 
+_QUANTILE_TABLE_CACHE = {}
+_QUANTILE_TABLE_POINTS = 2048
+_QUANTILE_TABLE_DRAWS = 40000
+
+
+def _quantile_table(dist, params):
+    """Monte Carlo quantile table for distributions with no closed-form
+    inverse CDF (beta, gamma, ...). Built once per (dist, params) from a
+    private RNG so the main seeded stream is untouched; lookups are O(1).
+    Quantile error is O(1/sqrt(draws)), well inside Monte Carlo noise."""
+    key = (dist, json.dumps(params, sort_keys=True, default=str))
+    table = _QUANTILE_TABLE_CACHE.get(key)
+    if table is None:
+        rng = random.Random(hash(key) & 0xFFFFFFFF)
+        saved = random.getstate()
+        random.setstate(rng.getstate())
+        try:
+            draws = sorted(SAMPLERS[dist](params) for _ in range(_QUANTILE_TABLE_DRAWS))
+        finally:
+            random.setstate(saved)
+        n = len(draws)
+        table = [draws[min(n - 1, int(i * (n - 1) / (_QUANTILE_TABLE_POINTS - 1)))]
+                 for i in range(_QUANTILE_TABLE_POINTS)]
+        if len(_QUANTILE_TABLE_CACHE) >= 256:
+            _QUANTILE_TABLE_CACHE.clear()
+        _QUANTILE_TABLE_CACHE[key] = table
+    return table
+
+
+def _table_quantile(table, u):
+    pos = u * (len(table) - 1)
+    i = int(pos)
+    if i >= len(table) - 1:
+        return table[-1]
+    frac = pos - i
+    return table[i] * (1 - frac) + table[i + 1] * frac
+
+
 def apply_correlation_to_sample(base_value, var_def, correlated_z):
-    """Transform a correlated standard normal into the variable's distribution."""
+    """Transform a correlated standard normal into the variable's distribution
+    (Gaussian copula: z -> u = Phi(z) -> F^{-1}(u))."""
     # Convert correlated Z to uniform via normal CDF, then to target distribution
     u = normal_cdf_approx(correlated_z)  # uniform [0,1]
     dist = var_def.get("distribution", "fixed")
@@ -219,6 +304,28 @@ def apply_correlation_to_sample(base_value, var_def, correlated_z):
             pmf *= lam / k
             p_cum += pmf
         return float(k)
+    elif dist == "categorical":
+        values = params.get("values", [0])
+        probs = params.get("probs")
+        if probs:
+            total = float(sum(probs))
+            acc = 0.0
+            for v, w in zip(values, probs):
+                acc += w / total
+                if u <= acc:
+                    return v
+            return values[-1]
+        return values[min(len(values) - 1, int(u * len(values)))]
+    elif dist == "empirical":
+        values = sorted(params.get("values", [0]))
+        v = values[min(len(values) - 1, int(u * len(values)))]
+        jitter = params.get("jitter", 0)
+        return v + random.gauss(0, jitter) if jitter else v
+    elif dist in SAMPLERS:
+        # No closed-form inverse CDF (beta, gamma, future samplers): go
+        # through a cached Monte Carlo quantile table so the copula still
+        # applies instead of silently dropping the correlation.
+        return _table_quantile(_quantile_table(dist, params), u)
     else:
         return base_value
 

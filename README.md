@@ -189,6 +189,10 @@ All three variable categories (`parameters`, `controls`, `exogenous`) share the 
 | `bernoulli` | `p` | Binary yes/no events |
 | `poisson` | `lambda` | Counts of rare events |
 | `student_t` | `mean`, `scale`, `df`, `min?`, `max?` | Fat-tailed returns (use df=5 for equities) |
+| `beta` | `alpha`, `beta`, `low?`, `high?` | Rates and probabilities; exact Beta-Binomial posteriors |
+| `gamma` | `shape`, `scale` or `rate` | Positive rates and waiting times; exact Gamma-Poisson posteriors |
+| `categorical` | `values`, `probs?` | Regimes and scenarios (recession / flat / boom) |
+| `empirical` | `values`, `jitter?` | Bootstrap from observed data, no parametric assumption |
 | `correlated_normal` | `mean`, `std` | Normal with correlation support (via step_logic) |
 
 ### Step Logic

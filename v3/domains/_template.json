@@ -8,7 +8,7 @@
 
   "_guide": {
     "schema": "v3 separates variables into parameters (uncertain, updatable), controls (your decisions), and exogenous (external shocks)",
-    "distributions": "fixed, uniform, triangular, normal, lognormal, bernoulli, poisson, student_t",
+    "distributions": "fixed, uniform, triangular, normal, lognormal, bernoulli, poisson, student_t, beta, gamma, categorical, empirical",
     "expressions": "min, max, abs, round, sqrt, log, exp, binomial(n, p), clamp(val, lo, hi), random()",
     "safety": "chance_constraints bound P(bad event); cvar_constraints bound expected tail loss"
   },

@@ -544,6 +544,10 @@ curl -s -X POST http://localhost:8420/api/report \
 | `bernoulli`    | `{p}`                                     | Yes/no event with known probability              |
 | `poisson`      | `{lambda}`                                | Count of events per time period                  |
 | `student_t`    | `{mean?, scale?, df?, min?, max?}`        | Like normal but with heavier tails               |
+| `beta`         | `{alpha, beta, low?, high?}`              | A rate/probability with explicit prior strength  |
+| `gamma`        | `{shape, scale}` or `{shape, rate}`       | Positive rates and waiting times                 |
+| `categorical`  | `{values, probs?}`                        | Discrete regimes / scenarios                     |
+| `empirical`    | `{values, jitter?}`                       | Bootstrap from observed data                     |
 
 ## Appendix: Safe Builtins for Expressions
 

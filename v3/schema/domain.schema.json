@@ -225,7 +225,11 @@
             "lognormal",
             "bernoulli",
             "poisson",
-            "student_t"
+            "student_t",
+            "beta",
+            "gamma",
+            "categorical",
+            "empirical"
           ]
         },
         "params": {
@@ -239,6 +243,12 @@
                 "type": "string",
                 "pattern": "^\\$",
                 "description": "Late-binding reference, e.g. '$current_price'. Resolved to state.get('current_price', 0) at sample time."
+              },
+              {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": ["number", "string", "boolean"] },
+                "description": "List-valued param: 'values' / 'probs' for categorical and empirical."
               }
             ]
           }
@@ -321,6 +331,56 @@
             "properties": {
               "params": {
                 "description": "student_t has NO strictly-required params; all have kernel defaults (df=5, mean=0, scale=1) and optional clamps (min, max). 'params' itself must still be a non-empty object per validate_config."
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "beta" } } },
+          "then": {
+            "properties": {
+              "params": { "required": ["alpha", "beta"], "description": "Beta(alpha, beta), optionally rescaled to [low, high] (defaults 0..1)." }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "gamma" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "required": ["shape"],
+                "anyOf": [ { "required": ["scale"] }, { "required": ["rate"] } ],
+                "description": "Gamma(shape, scale); 'rate' (= 1/scale) accepted instead of 'scale'."
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "categorical" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "required": ["values"],
+                "properties": {
+                  "values": { "type": "array", "minItems": 1 },
+                  "probs": { "type": "array", "minItems": 1, "items": { "type": "number", "minimum": 0 } }
+                },
+                "description": "Discrete outcome drawn from 'values' with optional 'probs' (same length; normalized; uniform when absent)."
+              }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "empirical" } } },
+          "then": {
+            "properties": {
+              "params": {
+                "required": ["values"],
+                "properties": {
+                  "values": { "type": "array", "minItems": 1, "items": { "type": "number" } },
+                  "jitter": { "type": "number", "minimum": 0 }
+                },
+                "description": "Bootstrap from observed 'values'; optional gaussian 'jitter' (a std) for a smoothed bootstrap."
               }
             }
           }

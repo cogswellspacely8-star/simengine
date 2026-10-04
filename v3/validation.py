@@ -13,7 +13,7 @@ when it is next touched.)
 import ast
 import math
 
-from kernel import SAMPLERS, DomainConfig, run_monte_carlo, SAFE_BUILTINS, normalize_condition
+from kernel import SAMPLERS, REQUIRED_PARAMS, DomainConfig, run_monte_carlo, SAFE_BUILTINS, normalize_condition
 
 _ALLOWED_FUNCS = set(SAFE_BUILTINS.keys())
 _PY_CONSTANTS = {"True", "False", "None"}
@@ -103,6 +103,41 @@ def check_expression_names(data):
 
 def _is_number(x):
     return isinstance(x, (int, float)) and not isinstance(x, bool)
+
+
+def _check_params(vname, dist, params):
+    """Per-distribution param checks: required keys (from kernel.REQUIRED_PARAMS)
+    and the list-shaped params of categorical/empirical. Never raises."""
+    errors = []
+    for key in REQUIRED_PARAMS.get(dist, ()):
+        if key not in params:
+            errors.append(f"Variable '{vname}' ({dist}): missing required param '{key}'")
+    if dist == "gamma" and "scale" not in params and "rate" not in params:
+        errors.append(f"Variable '{vname}' (gamma): provide 'scale' or 'rate'")
+    if dist in ("categorical", "empirical"):
+        values = params.get("values")
+        if not isinstance(values, list) or not values:
+            errors.append(f"Variable '{vname}' ({dist}): 'values' must be a non-empty list")
+        elif dist == "empirical" and not all(_is_number(v) for v in values):
+            errors.append(f"Variable '{vname}' (empirical): 'values' must all be numbers")
+        probs = params.get("probs")
+        if dist == "categorical" and probs is not None:
+            if (not isinstance(probs, list) or not isinstance(values, list)
+                    or len(probs) != len(values)):
+                errors.append(f"Variable '{vname}' (categorical): 'probs' must be a list the same length as 'values'")
+            elif not all(_is_number(w) and w >= 0 for w in probs) or sum(probs) <= 0:
+                errors.append(f"Variable '{vname}' (categorical): 'probs' must be non-negative with a positive sum")
+    if dist == "beta":
+        for key in ("alpha", "beta"):
+            v = params.get(key)
+            if _is_number(v) and v <= 0:
+                errors.append(f"Variable '{vname}' (beta): '{key}' must be positive")
+    if dist == "gamma":
+        for key in ("shape", "scale", "rate"):
+            v = params.get(key)
+            if _is_number(v) and v <= 0:
+                errors.append(f"Variable '{vname}' (gamma): '{key}' must be positive")
+    return errors
 
 
 def _path_resolves(data, path):
@@ -233,6 +268,8 @@ def validate_config(data):
                     errors.append(f"Variable '{vname}': unknown distribution '{dist}'. Available: {', '.join(SAMPLERS.keys())}")
                 if not vdef.get("params"):
                     errors.append(f"Variable '{vname}': missing 'params'")
+                elif isinstance(vdef["params"], dict):
+                    errors.extend(_check_params(vname, dist, vdef["params"]))
     if not has_vars:
         errors.append("No variables defined (need at least one of: parameters, controls, exogenous)")
 

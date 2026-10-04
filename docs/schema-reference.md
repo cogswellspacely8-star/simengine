@@ -90,7 +90,7 @@ any use of `correlations`).
 
 ## Distributions
 
-Eight samplers are registered. The param keys below are the exact keys the kernel
+Twelve samplers are registered. The param keys below are the exact keys the kernel
 reads — spell them precisely.
 
 | Distribution | Required params | Optional params | Use when |
@@ -103,6 +103,10 @@ reads — spell them precisely.
 | `bernoulli` | `p` | — | A yes/no event with probability `p` (returns 0 or 1). |
 | `poisson` | `lambda` | — | A count of independent events in a period (arrivals, defects). |
 | `student_t` | *(none)* | `df`, `mean`, `scale`, `min`, `max` | A bell with heavier tails than normal — fat-tail risk. |
+| `beta` | `alpha`, `beta` | `low`, `high` | A rate or probability with explicit prior strength; the exact output of a Beta-Binomial update. |
+| `gamma` | `shape`, and `scale` or `rate` | — | A positive rate or waiting time; the exact output of a Gamma-Poisson update. |
+| `categorical` | `values` | `probs` | A discrete regime or scenario (encode as numbers so expressions can compare them). |
+| `empirical` | `values` | `jitter` | You have observed data and no parametric story; bootstrap from it. |
 
 Exact sampler behavior (so you author params correctly):
 
@@ -114,6 +118,14 @@ Exact sampler behavior (so you author params correctly):
 - **`bernoulli`** → 1 with probability `p`, else 0.
 - **`poisson`** → integer count with rate `lambda`.
 - **`student_t`** → defaults `df=5`, `mean=0`, `scale=1`, clamped with `min=-1e18`, `max=1e18`. Every param has a default, so `student_t` has no strictly-required key — but always set `df`/`mean`/`scale` deliberately.
+- **`beta`** → `low + (high - low) * Beta(alpha, beta)`, defaults `low=0`, `high=1`. `alpha`, `beta` > 0.
+- **`gamma`** → `Gamma(shape, scale)`; pass `rate` instead of `scale` if you think in rates (`scale = 1/rate`).
+- **`categorical`** → one of `values`, weighted by `probs` (normalized; uniform when absent). `probs` must match `values` in length.
+- **`empirical`** → a uniformly drawn element of `values`; with `jitter` > 0, plus `gauss(0, jitter)` (smoothed bootstrap).
+
+List-valued params (`values`, `probs`) are the only non-numeric params the engine
+accepts. They cannot be `$name` references, and a variable using them disables the
+native batch sampler for the run (Python sampling path).
 
 > **Not a distribution: `correlated_normal`.** Older README tables list it as a
 > ninth distribution. It is **not** in the sampler registry, so `validate_config`
