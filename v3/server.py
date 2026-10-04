@@ -100,9 +100,22 @@ def build_histograms(raw_metrics, stats, n_bins=40):
     return histograms
 
 
+def _fmt_value(v, fmt):
+    """Render a threshold / CVaR value in the metric's own format. Previously
+    chance-constraint thresholds were always printed as integers (a 0.20
+    drawdown limit showed as 0) and CVaR values always with a dollar sign."""
+    if fmt == "dollar":
+        return f"${v:,.0f}"
+    if fmt == "percent":
+        return f"{v * 100:.1f}%" if abs(v) < 1 else f"{v:,.1f}"
+    return f"{v:,.2f}" if abs(v) < 100 else f"{v:,.0f}"
+
+
 def generate_narrative(stats, safety, config_data):
     lines = []
     context = config_data.get("context", {})
+    metric_fmt = {m: (s.get("format", "number") if isinstance(s, dict) else "number")
+                  for m, s in (stats or {}).items()}
 
     if context.get("decision"):
         lines.append(f"**The question:** {context['decision']}")
@@ -155,14 +168,16 @@ def generate_narrative(stats, safety, config_data):
                     violations.append(
                         f"There is a {c['actual_prob']*100:.0f}% chance of "
                         f"{c['metric'].replace('_',' ')} falling {c['condition']} "
-                        f"{c['threshold']:,.0f} (limit: {c['max_prob']*100:.0f}%{note})"
+                        f"{_fmt_value(c['threshold'], metric_fmt.get(c['metric']))} "
+                        f"(limit: {c['max_prob']*100:.0f}%{note})"
                     )
             for c in safety.get("cvar", []):
                 if not c["passed"]:
+                    fmt = metric_fmt.get(c['metric'])
                     violations.append(
                         f"In the worst {c['alpha']*100:.0f}% of scenarios, "
                         f"{c['metric'].replace('_',' ')} averages "
-                        f"${c['actual_cvar']:,.0f} (limit: ${c['min_cvar']:,.0f})"
+                        f"{_fmt_value(c['actual_cvar'], fmt)} (limit: {_fmt_value(c['min_cvar'], fmt)})"
                     )
             lines.append("**Risk warnings:**")
             for v in violations:
