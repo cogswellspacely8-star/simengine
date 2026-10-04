@@ -832,6 +832,7 @@ The first adapter, `feeds/polymarket.py`, turns a live Polymarket prediction-mar
 from feeds import polymarket
 markets = polymarket.fetch_markets(query="fed rate", limit=5)
 prior = polymarket.market_prior(markets[0], strength=20)   # -> a triangular variable_def
+# or distribution="beta" for an exactly-updatable Beta(p*strength, (1-p)*strength) prior
 ```
 
 See [`docs/feeds.md`](docs/feeds.md). Market prices are treated as internal simulation inputs, never a rebroadcast feed or trade signal.

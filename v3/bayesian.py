@@ -33,6 +33,12 @@ def beta_binomial_update(prior_params, observations, n_pseudo=10):
 
     Returns updated params dict.
     """
+    # Exact path: the variable IS a Beta(alpha, beta) (optionally rescaled to
+    # [low, high]). Conjugate update keeps it a Beta — no mapping back into a
+    # triangular, no pseudo-count guess.
+    if "alpha" in prior_params and "beta" in prior_params:
+        return _beta_exact_update(prior_params, observations)
+
     # Extract prior from triangular or uniform params
     if "mode" in prior_params:
         prior_mean = prior_params["mode"]
@@ -59,19 +65,7 @@ def beta_binomial_update(prior_params, observations, n_pseudo=10):
     beta_prior = max(1e-6, (1 - prior_mean) * n_pseudo)
 
     # Process observations
-    total_successes = 0
-    total_trials = 0
-    if observations and isinstance(observations[0], (list, tuple)):
-        for s, n in observations:
-            total_successes += s
-            total_trials += n
-    else:
-        # Treat as observed rates — convert to pseudo-counts
-        # Assume each observation represents ~20 trials
-        trials_per_obs = 20
-        for rate in observations:
-            total_successes += rate * trials_per_obs
-            total_trials += trials_per_obs
+    total_successes, total_trials = _count_observations(observations)
 
     # Posterior
     alpha_post = alpha_prior + total_successes
@@ -116,13 +110,99 @@ def beta_binomial_update(prior_params, observations, n_pseudo=10):
     }
 
 
+def _count_observations(observations):
+    """(successes, trials) from a list of (s, n) tuples or of observed rates."""
+    total_successes = 0
+    total_trials = 0
+    if observations and isinstance(observations[0], (list, tuple)):
+        for s, n in observations:
+            total_successes += s
+            total_trials += n
+    else:
+        # Observed rates: treat each as ~20 trials (documented approximation;
+        # pass (successes, trials) tuples for exact counts).
+        trials_per_obs = 20
+        for rate in observations:
+            total_successes += rate * trials_per_obs
+            total_trials += trials_per_obs
+    return total_successes, total_trials
+
+
+def _beta_exact_update(prior_params, observations):
+    alpha_prior = float(prior_params["alpha"])
+    beta_prior = float(prior_params["beta"])
+    successes, trials = _count_observations(observations)
+    alpha_post = alpha_prior + successes
+    beta_post = beta_prior + (trials - successes)
+    post_mean = alpha_post / (alpha_post + beta_post)
+    post_var = (alpha_post * beta_post) / ((alpha_post + beta_post) ** 2 * (alpha_post + beta_post + 1))
+    post_std = math.sqrt(post_var)
+    result = copy.deepcopy(prior_params)
+    result["alpha"] = round(alpha_post, 4)
+    result["beta"] = round(beta_post, 4)
+    return result, {
+        "method": "beta_binomial",
+        "exact": True,
+        "alpha_prior": round(alpha_prior, 2),
+        "beta_prior": round(beta_prior, 2),
+        "alpha_posterior": round(alpha_post, 2),
+        "beta_posterior": round(beta_post, 2),
+        "prior_mean": round(alpha_prior / (alpha_prior + beta_prior), 4),
+        "posterior_mean": round(post_mean, 4),
+        "posterior_std": round(post_std, 4),
+        "observations_used": len(observations),
+        "total_trials": trials,
+        "credible_interval_90": [
+            round(max(0, post_mean - 1.645 * post_std), 4),
+            round(min(1, post_mean + 1.645 * post_std), 4),
+        ],
+    }
+
+
+def _gamma_exact_update(prior_params, observations):
+    shape_prior = float(prior_params["shape"])
+    rate_prior = float(prior_params["rate"]) if "rate" in prior_params else 1.0 / float(prior_params["scale"])
+    n = len(observations)
+    total = sum(observations)
+    shape_post = shape_prior + total
+    rate_post = rate_prior + n
+    post_mean = shape_post / rate_post
+    post_std = math.sqrt(shape_post) / rate_post
+    result = copy.deepcopy(prior_params)
+    result["shape"] = round(shape_post, 4)
+    if "rate" in result:
+        result["rate"] = round(rate_post, 4)
+    else:
+        result["scale"] = round(1.0 / rate_post, 6)
+    return result, {
+        "method": "gamma_poisson",
+        "exact": True,
+        "alpha_prior": round(shape_prior, 2),
+        "beta_prior": round(rate_prior, 2),
+        "alpha_posterior": round(shape_post, 2),
+        "beta_posterior": round(rate_post, 2),
+        "prior_mean": round(shape_prior / rate_prior, 4),
+        "posterior_mean": round(post_mean, 4),
+        "posterior_std": round(post_std, 4),
+        "observations_used": n,
+        "credible_interval_90": [
+            round(max(0, post_mean - 1.645 * post_std), 4),
+            round(post_mean + 1.645 * post_std, 4),
+        ],
+    }
+
+
 def gamma_poisson_update(prior_params, observations, n_pseudo=5):
     """
     Update a count parameter using Gamma-Poisson conjugate.
 
     observations: list of observed counts
-    prior_params: dict with low/mode/high or lambda or value
+    prior_params: dict with shape+scale/rate (exact), or low/mode/high,
+                  lambda, value (moment-matched prior with n_pseudo)
     """
+    if "shape" in prior_params and ("scale" in prior_params or "rate" in prior_params):
+        return _gamma_exact_update(prior_params, observations)
+
     if "mode" in prior_params:
         prior_mean = prior_params["mode"]
     elif "lambda" in prior_params:
@@ -272,8 +352,10 @@ def infer_method(variable_def):
     dist = variable_def.get("distribution", "")
     params = variable_def.get("params", {})
 
-    if dist == "bernoulli":
+    if dist in ("bernoulli", "beta"):
         return beta_binomial_update
+    if dist == "gamma":
+        return gamma_poisson_update
 
     # If values are between 0 and 1, probably a rate
     vals = [v for v in params.values() if isinstance(v, (int, float))]
