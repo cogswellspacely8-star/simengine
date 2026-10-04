@@ -216,7 +216,7 @@
       "properties": {
         "distribution": {
           "type": "string",
-          "description": "One of the SAMPLERS registry keys. Note: 'correlated_normal' from the README table is NOT a registered sampler and would be rejected as an unknown distribution; use the top-level 'correlations' array instead.",
+          "description": "One of the SAMPLERS registry keys, or a PROCESSES key (random_walk, gbm, ar1, mean_reverting: variables with memory across steps). Note: 'correlated_normal' from the README table is NOT a registered sampler and would be rejected as an unknown distribution; use the top-level 'correlations' array instead.",
           "enum": [
             "fixed",
             "uniform",
@@ -229,7 +229,11 @@
             "beta",
             "gamma",
             "categorical",
-            "empirical"
+            "empirical",
+            "random_walk",
+            "gbm",
+            "ar1",
+            "mean_reverting"
           ]
         },
         "params": {
@@ -384,6 +388,22 @@
               }
             }
           }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "random_walk" } } },
+          "then": { "properties": { "params": { "required": ["start", "std"], "description": "Process: x_t = x_{t-1} + drift + std*z. Optional drift, min, max." } } }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "gbm" } } },
+          "then": { "properties": { "params": { "required": ["start", "sigma"], "description": "Process: x_t = x_{t-1} * exp(mu + sigma*z). Optional mu (per-step log drift), min, max." } } }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "ar1" } } },
+          "then": { "properties": { "params": { "required": ["mean", "phi", "std"], "description": "Process: x_t = mean + phi*(x_{t-1} - mean) + std*z. |phi| <= 1. Optional start (defaults to mean), min, max." } } }
+        },
+        {
+          "if": { "properties": { "distribution": { "const": "mean_reverting" } } },
+          "then": { "properties": { "params": { "required": ["mean", "theta", "std"], "description": "Process (discrete Ornstein-Uhlenbeck): x_t = x_{t-1} + theta*(mean - x_{t-1}) + std*z. theta in [0, 1]. Optional start, min, max." } } }
         }
       ]
     },

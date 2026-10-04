@@ -47,7 +47,7 @@ make native-bench       # compare native vs pure-Python perf
 
 ```
 v3/                        ALL production code lives here
-  kernel.py                Monte Carlo engine, distributions, optimizer, manifests
+  kernel.py                Monte Carlo engine, distributions + stochastic processes, optimizer, manifests
   server.py                HTTP server + all API endpoints
   bayesian.py              Conjugate prior updates
   diagnostics.py           Convergence, sensitivity, AST evaluator

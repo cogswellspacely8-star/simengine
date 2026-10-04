@@ -25,6 +25,7 @@ from typing import Optional
 from kernel import (
     DomainConfig, run_monte_carlo, simulate_one,
     compute_fitness, percentile as _percentile, SAMPLERS, sampler,
+    PROCESSES, PROCESS_NOISE_PARAM,
     _prepare_native_presampled_runs, SIM_LOCK
 )
 
@@ -362,6 +363,14 @@ def deterministic_baseline(config: DomainConfig) -> dict:
     for var_name, var_def in det_config.all_variables.items():
         dist = var_def["distribution"]
         params = var_def.get("params", {})
+
+        # A process's deterministic counterpart is its zero-noise path, not a
+        # constant: keep the dynamics, silence the innovation.
+        if dist in PROCESSES:
+            quiet = dict(params)
+            quiet[PROCESS_NOISE_PARAM[dist]] = 0.0
+            det_config.all_variables[var_name] = {"distribution": dist, "params": quiet}
+            continue
         
         # Extract the "most likely" value for each distribution
         if dist == "fixed":

@@ -139,6 +139,79 @@ REQUIRED_PARAMS = {
     "categorical": ("values",), "empirical": ("values",),
 }
 
+# ---------------------------------------------------------------------------
+# Stochastic processes (variables with memory across steps)
+# ---------------------------------------------------------------------------
+# A process is sampled like a distribution but receives the variable's own
+# previous value, so autocorrelated quantities (prices, rates, demand levels)
+# are first-class instead of hand-rolled in step_logic. Each takes
+# (params, prev, z): prev is None at step 1 (use `start`), z is a standard
+# normal innovation supplied by the caller — the copula path supplies a
+# correlated z, so two processes' shocks can be correlated like any other
+# pair of variables. All parameters are per step.
+PROCESSES = {}
+
+
+def process(name):
+    def dec(fn):
+        PROCESSES[name] = fn
+        return fn
+    return dec
+
+
+def _clamped(p, v):
+    return max(p.get("min", -1e18), min(p.get("max", 1e18), v))
+
+
+@process("random_walk")
+def _random_walk(p, prev, z):
+    # x_t = x_{t-1} + drift + std * z
+    x = p["start"] if prev is None else prev
+    return _clamped(p, x + p.get("drift", 0.0) + p["std"] * z)
+
+
+@process("gbm")
+def _gbm(p, prev, z):
+    # Geometric Brownian motion as a log random walk:
+    #   x_t = x_{t-1} * exp(mu + sigma * z)
+    # mu is the per-step log drift (median growth exp(mu) per step); the mean
+    # grows by exp(mu + sigma^2 / 2). Pass mu = r - sigma^2/2 if you want the
+    # mean to grow at r. Strictly positive.
+    x = p["start"] if prev is None else prev
+    return _clamped(p, x * math.exp(p.get("mu", 0.0) + p["sigma"] * z))
+
+
+@process("ar1")
+def _ar1(p, prev, z):
+    # x_t = mean + phi * (x_{t-1} - mean) + std * z ; stationary for |phi| < 1
+    # with long-run variance std^2 / (1 - phi^2). start defaults to mean.
+    mean = p["mean"]
+    x = p.get("start", mean) if prev is None else prev
+    return _clamped(p, mean + p["phi"] * (x - mean) + p["std"] * z)
+
+
+@process("mean_reverting")
+def _mean_reverting(p, prev, z):
+    # Discretized Ornstein-Uhlenbeck: x_t = x_{t-1} + theta * (mean - x_{t-1}) + std * z.
+    # theta in [0, 1] is the fraction of the gap closed per step (identical to
+    # ar1 with phi = 1 - theta; offered because practitioners think in speed).
+    mean = p["mean"]
+    x = p.get("start", mean) if prev is None else prev
+    return _clamped(p, x + p["theta"] * (mean - x) + p["std"] * z)
+
+
+PROCESS_NOISE_PARAM = {"random_walk": "std", "gbm": "sigma", "ar1": "std", "mean_reverting": "std"}
+
+REQUIRED_PARAMS.update({
+    "random_walk": ("start", "std"), "gbm": ("start", "sigma"),
+    "ar1": ("mean", "phi", "std"), "mean_reverting": ("mean", "theta", "std"),
+})
+
+
+def is_process(dist):
+    return dist in PROCESSES
+
+
 def _binomial(n, p):
     trials = max(0, int(round(n)))
     probability = _clamp(float(p), 0.0, 1.0)
@@ -458,14 +531,28 @@ def eval_expr(expr, state):
     except Exception:
         return 0
 
-def sample_var(var_def, state):
+def _resolve_params(var_def, state):
     params = {}
     for k, v in var_def.get("params", {}).items():
         if isinstance(v, str) and v.startswith("$"):
             params[k] = state.get(v[1:], 0)
         else:
             params[k] = v
-    return SAMPLERS[var_def["distribution"]](params)
+    return params
+
+
+def sample_var(var_def, state, name=None, z=None):
+    """Draw one value. For a process the variable's previous value is read
+    from state[name] (None at step 1); z is an optional standard normal
+    innovation (the copula path passes a correlated one)."""
+    params = _resolve_params(var_def, state)
+    dist = var_def["distribution"]
+    if dist in PROCESSES:
+        prev = state.get(name) if name is not None else None
+        if z is None:
+            z = random.gauss(0, 1)
+        return PROCESSES[dist](params, prev, z)
+    return SAMPLERS[dist](params)
 
 # ---------------------------------------------------------------------------
 # Experiment Manifest
@@ -618,6 +705,10 @@ def simulate_one(config, sampled_steps=None):
             precomputed = sampled_steps.get(vname) if sampled_steps else None
             if precomputed is not None and (step - 1) < len(precomputed):
                 state[vname] = precomputed[step - 1]
+            elif vdef.get("distribution") in PROCESSES:
+                # Processes keep their own state; a correlated z (if any) is
+                # the innovation, not a quantile.
+                state[vname] = sample_var(vdef, state, name=vname, z=corr_samples.get(vname))
             elif vname in corr_samples:
                 state[vname] = apply_correlation_to_sample(0, vdef, corr_samples[vname])
             else:
@@ -629,7 +720,7 @@ def simulate_one(config, sampled_steps=None):
             if "expr" in logic:
                 state[target] = eval_expr(logic["expr"], state)
             elif "sample" in logic:
-                state[target] = sample_var(logic["sample"], state)
+                state[target] = sample_var(logic["sample"], state, name=target)
             step_rec[target] = state[target]
         
         for acc, expr in config.accumulators.items():
@@ -666,7 +757,7 @@ def _build_native_variable_plan(config):
     plan = {}
     for vname, vdef in config.all_variables.items():
         distribution = vdef.get("distribution")
-        if distribution not in NATIVE_BATCH_SAMPLER_DISTRIBUTIONS:
+        if distribution not in NATIVE_BATCH_SAMPLER_DISTRIBUTIONS or distribution in PROCESSES:
             return None
 
         params = {}

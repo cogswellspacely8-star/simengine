@@ -559,6 +559,10 @@ curl -s -X POST http://localhost:8420/api/report \
 | `gamma`        | `{shape, scale}` or `{shape, rate}`       | Positive rates and waiting times                 |
 | `categorical`  | `{values, probs?}`                        | Discrete regimes / scenarios                     |
 | `empirical`    | `{values, jitter?}`                       | Bootstrap from observed data                     |
+| `random_walk`  | `{start, std, drift?}`                    | Process: level that drifts step to step          |
+| `gbm`          | `{start, sigma, mu?}`                     | Process: price path (log random walk)            |
+| `ar1`          | `{mean, phi, std, start?}`                | Process: autocorrelated level reverting to mean  |
+| `mean_reverting` | `{mean, theta, std, start?}`            | Process: Ornstein-Uhlenbeck rate / spread        |
 
 ## Appendix: Safe Builtins for Expressions
 

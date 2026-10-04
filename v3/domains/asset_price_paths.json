@@ -1,0 +1,72 @@
+{
+  "name": "Two Correlated Assets and a Mean-Reverting Rate",
+  "description": "Path-dependent portfolio risk over 52 weekly steps: two assets follow correlated geometric Brownian motion, a short rate reverts toward 4%, and the metrics include maximum drawdown — a quantity only a path simulation can price. Demonstrates first-class stochastic processes (gbm, mean_reverting) and path-dependent metrics via persistent step_logic targets.",
+  "n_simulations": 5000,
+  "n_steps": 52,
+  "step_label": "week",
+  "seed": 42,
+  "context": {
+    "decision": "How much of the portfolio should sit in the higher-volatility asset B, given a 20% drawdown tolerance?",
+    "what_good_looks_like": "Median portfolio above 105 at year end with less than a 20% chance of a drawdown worse than 20%."
+  },
+  "controls": {
+    "weight_a": {"distribution": "fixed", "params": {"value": 0.6}}
+  },
+  "exogenous": {
+    "asset_a": {
+      "distribution": "gbm",
+      "params": {"start": 100, "mu": 0.0012, "sigma": 0.025},
+      "calibration": {"source": "Weekly log-drift 0.12% (~6%/yr) and vol 2.5% (~18%/yr): broad-equity-like", "updatable": false}
+    },
+    "asset_b": {
+      "distribution": "gbm",
+      "params": {"start": 50, "mu": 0.0020, "sigma": 0.045},
+      "calibration": {"source": "Weekly log-drift 0.20% (~10%/yr) and vol 4.5% (~32%/yr): small-cap / crypto-like", "updatable": false}
+    },
+    "short_rate": {
+      "distribution": "mean_reverting",
+      "params": {"mean": 0.04, "theta": 0.08, "std": 0.0015, "start": 0.0525, "min": 0.0},
+      "calibration": {"source": "Starts at 5.25%, closes 8% of the gap to a 4% long-run level each week", "updatable": false}
+    }
+  },
+  "correlations": [
+    {"vars": ["asset_a", "asset_b"], "rho": 0.6}
+  ],
+  "initial_state": {"peak": 100.0, "max_drawdown": 0.0},
+  "step_logic": [
+    {"target": "portfolio", "expr": "100 * (weight_a * asset_a / 100 + (1 - weight_a) * asset_b / 50)"},
+    {"target": "peak", "expr": "max(peak, portfolio)"},
+    {"target": "drawdown", "expr": "(peak - portfolio) / peak"},
+    {"target": "max_drawdown", "expr": "max(max_drawdown, drawdown)"},
+    {"target": "cash_yield", "expr": "short_rate / 52"}
+  ],
+  "accumulators": {
+    "portfolio_value": "portfolio",
+    "running_peak": "peak",
+    "cumulative_cash_yield": "cumulative_cash_yield + cash_yield"
+  },
+  "metrics": {
+    "final_portfolio": {"expr": "portfolio", "format": "number"},
+    "max_drawdown": {"expr": "max_drawdown", "format": "percent"},
+    "pct_chance_of_loss": {"expr": "100 if portfolio < 100 else 0", "format": "number"},
+    "pct_chance_drawdown_over_20": {"expr": "100 if max_drawdown > 0.20 else 0", "format": "number"},
+    "final_short_rate": {"expr": "short_rate", "format": "percent"}
+  },
+  "safety": {
+    "chance_constraints": [
+      {"metric": "max_drawdown", "condition": "above", "threshold": 0.20, "max_prob": 0.20,
+       "rationale": "Drawdown tolerance: at most a 20% chance of a drawdown worse than 20%"}
+    ],
+    "cvar_constraints": [
+      {"metric": "final_portfolio", "alpha": 0.10, "min_cvar": 80}
+    ]
+  },
+  "fitness": {
+    "components": [
+      {"expr": "final_portfolio_median", "weight": 1.0}
+    ]
+  },
+  "tunable": [
+    {"path": "controls.weight_a.params.value", "range": [0.0, 1.0], "step": 0.05}
+  ]
+}

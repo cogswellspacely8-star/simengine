@@ -193,6 +193,23 @@ All three variable categories (`parameters`, `controls`, `exogenous`) share the 
 | `gamma` | `shape`, `scale` or `rate` | Positive rates and waiting times; exact Gamma-Poisson posteriors |
 | `categorical` | `values`, `probs?` | Regimes and scenarios (recession / flat / boom) |
 | `empirical` | `values`, `jitter?` | Bootstrap from observed data, no parametric assumption |
+
+### Stochastic Processes
+
+Processes are declared like distributions but carry their own value from step to
+step, so autocorrelated quantities are first-class instead of hand-rolled in
+`step_logic`. All parameters are per step; `z` is a standard-normal innovation
+(correlate two processes' shocks through the `correlations` array like any other pair).
+
+| Process | Params | Recursion |
+|---------|--------|-----------|
+| `random_walk` | `start`, `std`, `drift?`, `min?`, `max?` | `x = x_prev + drift + std*z` |
+| `gbm` | `start`, `sigma`, `mu?`, `min?`, `max?` | `x = x_prev * exp(mu + sigma*z)` (mu = per-step log drift; mean grows at mu + sigma²/2) |
+| `ar1` | `mean`, `phi`, `std`, `start?` | `x = mean + phi*(x_prev - mean) + std*z`, stationary for `\|phi\| < 1` |
+| `mean_reverting` | `mean`, `theta`, `std`, `start?` | `x = x_prev + theta*(mean - x_prev) + std*z` (discrete Ornstein-Uhlenbeck; theta = fraction of the gap closed per step) |
+
+See `domains/asset_price_paths.json` for two correlated GBM assets, a mean-reverting
+rate, and a maximum-drawdown metric built from persistent `step_logic` targets.
 | `correlated_normal` | `mean`, `std` | Normal with correlation support (via step_logic) |
 
 ### Step Logic

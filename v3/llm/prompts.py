@@ -77,6 +77,8 @@ SYSTEM_PROMPT = (
     "DISTRIBUTIONS: fixed{value}, uniform{low,high}, triangular{low,mode,high}, normal{mean,std,min?,max?}, "
     "lognormal{median,spread,min?,max?}, bernoulli{p}, poisson{lambda}, student_t{mean,scale,df,min?,max?}, "
     "beta{alpha,beta,low?,high?}, gamma{shape,scale|rate}, categorical{values,probs?}, empirical{values,jitter?}. "
+    "Processes (carry their value step to step; per-step params): random_walk{start,std,drift?}, "
+    "gbm{start,sigma,mu?} (prices), ar1{mean,phi,std,start?}, mean_reverting{mean,theta,std,start?} (rates, levels). "
     "There is no 'beta' distribution.\n"
     "EXPRESSION FUNCTIONS: min, max, abs, round, sum, len, int, float, sqrt, log, exp, ceil, floor, pow, "
     "random(), gauss(mu,sigma), binomial(n,p), clamp(val,lo,hi). Ternary works: \"A if cond else B\". "

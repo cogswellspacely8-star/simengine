@@ -90,7 +90,7 @@ any use of `correlations`).
 
 ## Distributions
 
-Twelve samplers are registered. The param keys below are the exact keys the kernel
+Twelve samplers and four processes are registered. The param keys below are the exact keys the kernel
 reads — spell them precisely.
 
 | Distribution | Required params | Optional params | Use when |
@@ -126,6 +126,38 @@ Exact sampler behavior (so you author params correctly):
 List-valued params (`values`, `probs`) are the only non-numeric params the engine
 accepts. They cannot be `$name` references, and a variable using them disables the
 native batch sampler for the run (Python sampling path).
+
+### Processes — variables with memory
+
+A process is declared with the same `{"distribution": ..., "params": ...}` shape
+but is advanced from its own previous value each step (the previous value is read
+from state under the variable's name; at step 1 it is `start`). All parameters are
+per step. `z` below is a standard-normal innovation drawn fresh each step; if the
+variable appears in `correlations`, the correlated normal is used as `z`, so two
+processes' shocks can be correlated.
+
+| Process | Required | Optional | Recursion |
+|---------|----------|----------|-----------|
+| `random_walk` | `start`, `std` | `drift`, `min`, `max` | `x = x_prev + drift + std*z` |
+| `gbm` | `start`, `sigma` | `mu`, `min`, `max` | `x = x_prev * exp(mu + sigma*z)` |
+| `ar1` | `mean`, `phi`, `std` | `start` (defaults to `mean`), `min`, `max` | `x = mean + phi*(x_prev - mean) + std*z` |
+| `mean_reverting` | `mean`, `theta`, `std` | `start` (defaults to `mean`), `min`, `max` | `x = x_prev + theta*(mean - x_prev) + std*z` |
+
+Semantics worth knowing:
+
+- **`gbm`**'s `mu` is the per-step drift of the *log* price: the median path grows by
+  `exp(mu)` per step and the mean by `exp(mu + sigma²/2)`. If you want the mean to
+  grow at a rate `r`, pass `mu = r - sigma²/2`. `start` must be positive.
+- **`ar1`** is stationary for `|phi| < 1` with long-run variance `std² / (1 - phi²)`;
+  `phi = 1` is a random walk; `|phi| > 1` is rejected by validation.
+- **`mean_reverting`** is the discrete Ornstein-Uhlenbeck process and equals `ar1`
+  with `phi = 1 - theta`. `theta` must be in `[0, 1]`.
+- Processes also work as inline `step_logic` samples (the `target` name carries the
+  memory). They are never batch-sampled natively (Python path). The deterministic
+  baseline runs a process with its noise set to zero rather than freezing it.
+- Path-dependent quantities (running peak, drawdown, first-passage) are built from
+  persistent `step_logic` targets seeded in `initial_state`; see
+  `domains/asset_price_paths.json`.
 
 > **Not a distribution: `correlated_normal`.** Older README tables list it as a
 > ninth distribution. It is **not** in the sampler registry, so `validate_config`
