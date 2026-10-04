@@ -763,8 +763,8 @@ print(f"Effective rate (median): ${resp['stats']['effective_rate']['median']:,.0
 
 The `/api/simulate` response includes everything an agent needs to reason about the outcome:
 
-- `stats` -- Full distribution statistics for every metric (mean, median, std, p10/p25/p75/p90).
-- `safety` -- Pass/fail on every constraint with actual probabilities.
+- `stats` -- Full distribution statistics for every metric (mean, median, std, p10/p25/p75/p90), plus `ci95`: the Monte Carlo error on each of those estimates (and on `binary_prob` for indicator metrics).
+- `safety` -- Pass/fail on every constraint with actual probabilities, a 95% interval on each chance-constraint probability, and a `borderline` flag when the limit falls inside it.
 - `fitness` -- Single scalar score for comparing scenarios.
 - `narrative` -- Human-readable summary text.
 - `trajectories` -- Time-series percentile bands for trend analysis.

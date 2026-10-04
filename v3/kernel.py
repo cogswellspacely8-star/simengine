@@ -789,6 +789,86 @@ def indicator_probability(stat):
     return None
 
 
+# ---------------------------------------------------------------------------
+# Monte Carlo error on the outputs
+# ---------------------------------------------------------------------------
+# A simulation's statistics are estimates with sampling error of their own.
+# Every metric gets a `ci95` block (analytic, O(n log n), identical on the
+# native and pure-Python paths because it is computed here from raw values):
+#   mean   : normal-theory interval, mean +/- 1.96 * std / sqrt(n)
+#   median, p10, p90 : distribution-free order-statistic intervals
+#   binary_prob      : Wilson score interval
+# Chance constraints get the same Wilson interval on actual_prob plus a
+# `borderline` flag when the limit lies inside it (pass/fail is then noise).
+_Z95 = 1.959964
+
+
+def wilson_interval(successes, n, z=_Z95):
+    """Wilson score interval for a binomial proportion; (0, 0) when n == 0."""
+    if n <= 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    lo = 0.0 if successes <= 0 else max(0.0, center - half)
+    hi = 1.0 if successes >= n else min(1.0, center + half)
+    return (lo, hi)
+
+
+def quantile_interval(sorted_vals, pct, z=_Z95):
+    """Distribution-free CI for the pct-th percentile from order statistics:
+    the sample quantile's rank is Binomial(n, p), so ranks n*p +/- z*sqrt(n p (1-p))
+    bracket the true quantile with ~95% coverage."""
+    n = len(sorted_vals)
+    if n == 0:
+        return (0.0, 0.0)
+    p = pct / 100.0
+    half = z * math.sqrt(n * p * (1 - p))
+    lo_i = max(0, int(math.floor(n * p - half)))
+    hi_i = min(n - 1, int(math.ceil(n * p + half)))
+    return (sorted_vals[lo_i], sorted_vals[hi_i])
+
+
+def _annotate_uncertainty(stats, all_metrics):
+    for mname, s in stats.items():
+        if not isinstance(s, dict):
+            continue
+        vals = all_metrics.get(mname)
+        if not vals:
+            continue
+        n = len(vals)
+        sv = sorted(vals)
+        mean = statistics.mean(vals)
+        se = (statistics.stdev(vals) / math.sqrt(n)) if n > 1 else 0.0
+        ci = {
+            "mean": [round(mean - _Z95 * se, 4), round(mean + _Z95 * se, 4)],
+            "median": [round(x, 4) for x in quantile_interval(sv, 50)],
+            "p10": [round(x, 4) for x in quantile_interval(sv, 10)],
+            "p90": [round(x, 4) for x in quantile_interval(sv, 90)],
+        }
+        p = s.get("binary_prob")
+        if isinstance(p, (int, float)) and not isinstance(p, bool):
+            k = int(round(p * n))
+            ci["binary_prob"] = [round(x, 4) for x in wilson_interval(k, n)]
+        s["ci95"] = ci
+        s["n"] = n
+    return stats
+
+
+def _annotate_safety_uncertainty(results, raw):
+    for cc in results.get("chance", []) or []:
+        vals = raw.get(cc.get("metric"), [])
+        n = len(vals)
+        if not n:
+            continue
+        k = int(round(cc["actual_prob"] * n))
+        lo, hi = wilson_interval(k, n)
+        cc["actual_prob_ci95"] = [round(lo, 4), round(hi, 4)]
+        cc["borderline"] = bool(lo <= cc["max_prob"] <= hi)
+    return results
+
+
 def _compute_trajectories_python(trajectory_samples):
     trajectories = {}
     for acc, steps in trajectory_samples.items():
@@ -918,9 +998,11 @@ def _run_monte_carlo_locked(config, seed=None, n_override=None):
     if trajectories is None:
         trajectories = _compute_trajectories_python(trajectory_samples)
 
-    # Annotate indicator metrics with their event probability (works regardless
-    # of whether stats came from the native or pure-Python reducer).
+    # Annotate indicator metrics with their event probability, then every
+    # metric with its Monte Carlo error (both work regardless of whether stats
+    # came from the native or pure-Python reducer).
     _annotate_indicators(stats, all_metrics)
+    _annotate_uncertainty(stats, all_metrics)
 
     return {
         "domain": config.name, "n_simulations": n,
@@ -962,12 +1044,15 @@ def evaluate_safety(mc_result, safety_config):
     """
     raw = mc_result.get("raw_metrics", {})
     native_backend = _get_native_backend()
+    results = None
     if native_backend is not None:
         try:
-            return native_backend.evaluate_safety(raw, safety_config)
+            results = native_backend.evaluate_safety(raw, safety_config)
         except Exception:
-            pass
-    return _evaluate_safety_python(raw, safety_config)
+            results = None
+    if results is None:
+        results = _evaluate_safety_python(raw, safety_config)
+    return _annotate_safety_uncertainty(results, raw)
 
 # ---------------------------------------------------------------------------
 # Fitness with Safety Penalty

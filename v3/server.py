@@ -113,8 +113,10 @@ def generate_narrative(stats, safety, config_data):
 
         prob = indicator_probability(s)
         if prob is not None:
+            ci = (s.get("ci95") or {}).get("binary_prob")
+            band = f" (95% interval {ci[0]*100:.0f}–{ci[1]*100:.0f}%)" if ci else ""
             lines.append(
-                f"**{label}**: about {prob * 100:.0f}% chance across all simulated scenarios."
+                f"**{label}**: about {prob * 100:.0f}% chance across all simulated scenarios{band}."
             )
             continue
 
@@ -145,10 +147,15 @@ def generate_narrative(stats, safety, config_data):
             violations = []
             for c in safety.get("chance", []):
                 if not c["passed"]:
+                    note = ""
+                    if c.get("borderline"):
+                        lo, hi = c["actual_prob_ci95"]
+                        note = (f"; borderline — the limit sits inside the "
+                                f"{lo*100:.0f}–{hi*100:.0f}% sampling interval, run more simulations")
                     violations.append(
                         f"There is a {c['actual_prob']*100:.0f}% chance of "
                         f"{c['metric'].replace('_',' ')} falling {c['condition']} "
-                        f"{c['threshold']:,.0f} (limit: {c['max_prob']*100:.0f}%)"
+                        f"{c['threshold']:,.0f} (limit: {c['max_prob']*100:.0f}%{note})"
                     )
             for c in safety.get("cvar", []):
                 if not c["passed"]:

@@ -269,27 +269,38 @@ interpret each one and relay it to the user.
 
 A dictionary keyed by metric name. Each entry contains:
 
-| Field    | Meaning                                          |
-|----------|--------------------------------------------------|
-| `mean`   | Average across all simulations                   |
-| `median` | 50th percentile (typical outcome)                |
-| `std`    | Standard deviation (spread of outcomes)          |
-| `p5`     | 5th percentile (bad-case scenario)               |
-| `p25`    | 25th percentile (below-average outcome)          |
-| `p75`    | 75th percentile (above-average outcome)          |
-| `p95`    | 95th percentile (best-case scenario)             |
-| `min`    | Worst single simulation                          |
-| `max`    | Best single simulation                           |
+| Field         | Meaning                                                                 |
+|---------------|-------------------------------------------------------------------------|
+| `mean`        | Average across all simulations                                          |
+| `median`      | 50th percentile (typical outcome)                                       |
+| `std`         | Standard deviation (spread of outcomes)                                 |
+| `p10`         | 10th percentile (bad-case scenario)                                     |
+| `p25`         | 25th percentile (below-average outcome)                                 |
+| `p75`         | 75th percentile (above-average outcome)                                 |
+| `p90`         | 90th percentile (best-case scenario)                                    |
+| `format`      | `number`, `dollar` or `percent` (how to render)                         |
+| `binary_prob` | Only on indicator metrics (`100 if cond else 0`): the event probability |
+| `n`           | Number of simulations behind these numbers                              |
+| `ci95`        | Monte Carlo error: 95% intervals for `mean`, `median`, `p10`, `p90` and (indicator metrics) `binary_prob` |
+
+All values are rounded to 4 decimals. `ci95` is the engine's uncertainty about its
+own estimate, not the spread of outcomes: a wide `p10`–`p90` says the future is
+uncertain; a wide `ci95.mean` says you need more simulations. If a market price
+or a decision threshold sits inside `ci95.binary_prob`, the simulation cannot
+distinguish your estimate from it — do not report an edge.
 
 **Agent interpretation pattern:** "Your median annual profit is $X. In a bad year
-(5th percentile), you might see $Y. In a great year (95th percentile), $Z."
+(10th percentile), you might see $Y. In a great year (90th percentile), $Z."
 
 ### 4.2 safety
 
 Reports whether each constraint passed or failed:
 
-- **Chance constraints** show the observed probability of violation vs. the maximum
-  allowed. If `observed_prob > max_prob`, the constraint failed.
+- **Chance constraints** show the observed probability of violation (`actual_prob`)
+  vs. the maximum allowed (`max_prob`). If `actual_prob > max_prob`, the constraint
+  failed. Each entry also carries `actual_prob_ci95` (Wilson interval) and
+  `borderline: true` when `max_prob` lies inside that interval — the pass/fail
+  verdict is then sampling noise; say so, and suggest more simulations.
 - **CVaR constraints** show the conditional value at risk in the specified tail.
   If `observed_cvar < min_cvar`, the constraint failed.
 
