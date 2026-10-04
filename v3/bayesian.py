@@ -24,6 +24,18 @@ import statistics
 import copy
 
 
+def _not_updatable(prior_params, method):
+    """Uniform / categorical / empirical / process params have no conjugate
+    mapping. Return the params unchanged with a skipped report. (Returning the
+    bare dict, as before, made update_config unpack its KEYS into the config:
+    params became the string 'low'.)"""
+    return prior_params, {
+        "skipped": True, "method": method,
+        "reason": f"no conjugate mapping for params {sorted(prior_params)}; "
+                  f"params left unchanged",
+    }
+
+
 def beta_binomial_update(prior_params, observations, n_pseudo=10):
     """
     Update a rate/probability parameter using Beta-Binomial conjugate.
@@ -52,7 +64,7 @@ def beta_binomial_update(prior_params, observations, n_pseudo=10):
         prior_mean = prior_params["value"]
         prior_low, prior_high = 0, 1
     else:
-        return prior_params
+        return _not_updatable(prior_params, "beta_binomial")
 
     # Convert prior mean to Beta parameters by method of moments. n_pseudo is
     # the prior's concentration in pseudo-observations (default 10; callers
@@ -212,7 +224,7 @@ def gamma_poisson_update(prior_params, observations, n_pseudo=5):
     elif "mean" in prior_params:
         prior_mean = prior_params["mean"]
     else:
-        return prior_params
+        return _not_updatable(prior_params, "gamma_poisson")
 
     # Gamma prior: shape=alpha, rate=beta. Mean = alpha/beta. n_pseudo is the
     # prior's concentration in pseudo-observations (default 5).
@@ -281,7 +293,7 @@ def normal_normal_update(prior_params, observations):
         prior_mean = prior_params["value"]
         prior_std = abs(prior_mean) * 0.2 or 1
     else:
-        return prior_params
+        return _not_updatable(prior_params, "normal_normal")
 
     prior_var = prior_std ** 2
 
@@ -401,8 +413,13 @@ def update_parameter(variable_def, observations, method=None):
         strength = float(strength)
         if strength <= 0:
             raise ValueError("calibration.prior_strength must be positive")
-        return updater(variable_def["params"], observations, n_pseudo=strength)
-    return updater(variable_def["params"], observations)
+        result = updater(variable_def["params"], observations, n_pseudo=strength)
+    else:
+        result = updater(variable_def["params"], observations)
+    # Defensive: an updater must return (params, report).
+    if not (isinstance(result, tuple) and len(result) == 2):
+        return variable_def["params"], {"skipped": True, "reason": "updater returned no report"}
+    return result
 
 
 def update_config(config_data, observation_data):
