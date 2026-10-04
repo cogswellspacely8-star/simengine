@@ -139,3 +139,13 @@ Five follow-up commits on the same branch after the "is the math sound?" pass:
 Suite after phase 1: **Ran 397 tests** (pure-Python and native paths both green). Still open from the math pass: CVaR has no interval (needs a bootstrap); the non-PD correlation matrix is documented but still clamped rather than rejected; the fitness penalty is still a violation count rather than slack-proportional.
 
 Phase 2 (first-class stochastic processes: random walk, AR(1), GBM, mean reversion) and phase 3 (ledger baseline column, skill-vs-market, CRPS resolution, first bucket-market domain) are not started.
+
+## Addendum — phase 2 ("model the right processes"), same day
+
+- `cff6e6b` **Pre-existing corruption bug found while wiring processes.** `update_config` on any variable with no conjugate mapping (uniform, categorical, empirical, now processes) unpacked the params dict's *keys*: a uniform variable came back with `params == "low"`. Reachable through `/api/update` and the `update_bayesian` MCP tool. Updaters now return a skipped report; `update_parameter` guards the pair shape.
+- `cdf11a5` **First-class stochastic processes:** `random_walk`, `gbm`, `ar1`, `mean_reverting`. Declared like distributions, advanced from their own previous value each step, innovations correlatable through the existing `correlations` array, usable inline in `step_logic`, zero-noise path in the deterministic baseline, validated (|phi| ≤ 1, theta ∈ [0, 1], gbm start > 0). New example `domains/asset_price_paths.json`: two correlated GBM assets, a mean-reverting rate, and a maximum-drawdown metric built from persistent `step_logic` targets. Documented in README, schema-reference ("Processes" section with the `mu` / `phi` / `theta` semantics), the LLM compiler prompt and AGENT_INTEGRATION.
+- `571f78e` **Narrative formatting** found by running the new domain: a 0.20 threshold rendered as "0" and a non-dollar CVaR carried a dollar sign. Now formatted from the metric's declared format.
+
+Suite after phase 2: **420 tests OK** on both paths. HTTP smoke on `asset_price_paths.json`: 5,000 × 52 steps in 4.6 s on the pure path (processes are never batch-sampled natively; a native innovation pre-sampler is the obvious next performance step if path models become the main workload). MCP smoke: 9 tools, 18 domains.
+
+Not done: the shipped `btc_above_70k_jun2026.json` still hand-rolls GBM (left untouched so its logged forecast's `config_hash` stays valid). Phase 3 (ledger baseline column, skill-vs-market, CRPS resolution, first bucket-market domain) is not started.
