@@ -125,3 +125,17 @@ make test
 ```
 
 The three behavior changes a reviewer should consciously accept: forbidden expression syntax now raises at load instead of evaluating to 0; negative fitness scores are penalized downward instead of upward; metric stats carry 4 decimals instead of 2.
+
+## Addendum — phase 1 ("make the math honest"), same day
+
+Five follow-up commits on the same branch after the "is the math sound?" pass:
+
+1. `e5e571c` **Exact prior means, correlated Poisson, honest labels.** Beta/Gamma prior construction no longer floors shape parameters at 1 (a mode of 0.05 had become a prior mean of 0.095). Correlated Poisson inverse-CDF search is no longer capped at 100. Inverse normal CDF relabelled (A&S 26.2.23), "Sobol-style" claim removed, copula semantics documented (rho is normal-score correlation; matrix must be positive-definite).
+2. `fb09cc3` **Beta, Gamma, categorical, empirical samplers.** All stdlib, all copula-aware (exact inverse CDF for the discrete ones; a cached Monte Carlo quantile table for beta/gamma and any future sampler, so a correlation is never silently dropped again). Per-distribution required-param validation driven by `kernel.REQUIRED_PARAMS`; schema, docs, LLM prompt and baseline updated. Backlog #8 (dead `choice` branch) closed.
+3. `ee6d986` **Exact conjugate updates** when the variable is already Beta or Gamma: no mapping back into a triangular, no pseudo-count guess. `infer_method` picks the family from the distribution before the value-range heuristic. The Polymarket feed can emit a Beta prior directly (`distribution="beta"`).
+4. `704dd86` **Monte Carlo error bars.** Every metric carries `ci95` (mean, median, p10, p90, and Wilson on `binary_prob`) and `n`; chance constraints carry `actual_prob_ci95` and a `borderline` flag that both narratives surface. The AGENT_INTEGRATION stats table was documenting fields the engine never returned (p5/p95/min/max); corrected.
+5. **Sampler moment suite.** Closed-form mean/variance checks for all twelve samplers, copula recovery, and the same checks against the Rust batch sampler when built.
+
+Suite after phase 1: **Ran 397 tests** (pure-Python and native paths both green). Still open from the math pass: CVaR has no interval (needs a bootstrap); the non-PD correlation matrix is documented but still clamped rather than rejected; the fitness penalty is still a violation count rather than slack-proportional.
+
+Phase 2 (first-class stochastic processes: random walk, AR(1), GBM, mean reversion) and phase 3 (ledger baseline column, skill-vs-market, CRPS resolution, first bucket-market domain) are not started.
