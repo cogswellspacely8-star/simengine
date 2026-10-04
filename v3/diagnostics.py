@@ -3,7 +3,8 @@ SimEngine Diagnostics Module
 ==============================
 Addresses peer review concerns:
   1. Convergence diagnostics — proves sample sizes are sufficient
-  2. Sensitivity analysis — variance decomposition (one-at-a-time + Sobol-style)
+  2. Sensitivity analysis — one-at-a-time perturbation with common random
+     numbers (first-order ranking; no Sobol/variance decomposition yet)
   3. Baseline comparison — spreadsheet-equivalent deterministic baseline
   4. Improved distributions — Student's t for fat tails, correlated sampling
 

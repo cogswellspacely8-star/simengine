@@ -291,7 +291,20 @@ sampled independently.
 - `rho` — correlation coefficient (defaults to `0` if missing).
 
 The engine builds a correlation matrix and Cholesky factor and applies it to the
-samples. **Presence of any `correlations` entry disables the native batch sampler**
+samples through a **Gaussian copula**: correlated standard normals are mapped to
+each variable's own distribution via its inverse CDF. Two consequences worth
+knowing:
+
+- `rho` is the copula (normal-score) correlation, not the Pearson correlation of
+  the final samples. For normal marginals they coincide; for skewed marginals
+  (lognormal, poisson, bernoulli) the realized Pearson correlation is smaller in
+  magnitude. If you need a specific realized correlation, measure it from
+  `raw_metrics` and adjust `rho`.
+- The matrix must be positive-definite. An inconsistent set of pairwise rhos
+  (e.g. A~B 0.9, B~C 0.9, A~C -0.9) is currently clamped rather than rejected,
+  so the realized correlations will not match what was asked.
+
+**Presence of any `correlations` entry disables the native batch sampler**
 (the run falls back to the Python path).
 
 ---

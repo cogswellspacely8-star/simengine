@@ -51,8 +51,12 @@ def beta_binomial_update(prior_params, observations, n_pseudo=10):
     # Convert prior mean to Beta parameters by method of moments. n_pseudo is
     # the prior's concentration in pseudo-observations (default 10; callers
     # that built the prior with a known strength pass it through).
-    alpha_prior = max(1, prior_mean * n_pseudo)
-    beta_prior = max(1, (1 - prior_mean) * n_pseudo)
+    # No floor at 1: flooring alpha/beta shifted the prior mean (a mode of 0.05
+    # with n_pseudo=10 became Beta(1, 9.5), prior mean 0.095). Only guard
+    # against a degenerate zero-mass prior so the posterior stays proper.
+    prior_mean = min(max(prior_mean, 1e-9), 1 - 1e-9)
+    alpha_prior = max(1e-6, prior_mean * n_pseudo)
+    beta_prior = max(1e-6, (1 - prior_mean) * n_pseudo)
 
     # Process observations
     total_successes = 0
@@ -132,7 +136,8 @@ def gamma_poisson_update(prior_params, observations, n_pseudo=5):
 
     # Gamma prior: shape=alpha, rate=beta. Mean = alpha/beta. n_pseudo is the
     # prior's concentration in pseudo-observations (default 5).
-    alpha_prior = max(1, prior_mean * n_pseudo)
+    # No floor at 1 (it shifted the prior mean for rates below 1/n_pseudo).
+    alpha_prior = max(1e-6, prior_mean * n_pseudo)
     beta_prior = n_pseudo
 
     # Update

@@ -136,7 +136,12 @@ def generate_correlated_normals(L, n):
     return [sum(L[i][j] * z[j] for j in range(i + 1)) for i in range(n)]
 
 def normal_cdf_inv_approx(p):
-    """Approximate inverse normal CDF (Beasley-Springer-Moro algorithm)."""
+    """Approximate inverse normal CDF.
+
+    Abramowitz & Stegun 26.2.23 rational approximation (|error| < 4.5e-4),
+    not Beasley-Springer-Moro as previously labelled. Saturates at +/-4 for
+    p outside (0, 1). Kept for callers; the kernel itself does not use it.
+    """
     if p <= 0: return -4.0
     if p >= 1: return 4.0
     if p == 0.5: return 0.0
@@ -148,7 +153,7 @@ def normal_cdf_inv_approx(p):
     return result if p > 0.5 else -result
 
 def normal_cdf_approx(x):
-    """Approximate standard normal CDF."""
+    """Approximate standard normal CDF (Abramowitz & Stegun 26.2.17, |error| < 7.5e-8)."""
     t = 1.0 / (1.0 + 0.2316419 * abs(x))
     d = 0.3989422804014327  # 1/sqrt(2*pi)
     p = d * math.exp(-x * x / 2.0) * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
@@ -195,12 +200,24 @@ def apply_correlation_to_sample(base_value, var_def, correlated_z):
     elif dist == "bernoulli":
         return 1.0 if u < params.get("p", 0.5) else 0.0
     elif dist == "poisson":
-        # Use inverse CDF for Poisson
-        lam = params.get("lambda", 1)
-        k, p_cum = 0, math.exp(-lam)
-        while u > p_cum and k < 100:
+        # Inverse CDF for Poisson. The pmf is accumulated recursively
+        # (pmf(k) = pmf(k-1) * lam / k) instead of re-summing log k! each
+        # step, and the search bound scales with lambda instead of the old
+        # fixed cap of 100, which biased any correlated Poisson with a large
+        # rate low. For lambda beyond ~700 exp(-lam) underflows, so use the
+        # normal approximation there (continuity-corrected, clamped at 0).
+        lam = float(params.get("lambda", 1))
+        if lam <= 0:
+            return 0.0
+        if lam > 700:
+            return float(max(0, int(round(lam + correlated_z * math.sqrt(lam)))))
+        k_max = int(lam + 12 * math.sqrt(lam) + 50)
+        k, pmf = 0, math.exp(-lam)
+        p_cum = pmf
+        while u > p_cum and k < k_max:
             k += 1
-            p_cum += math.exp(-lam + k * math.log(lam) - sum(math.log(i) for i in range(1, k + 1)))
+            pmf *= lam / k
+            p_cum += pmf
         return float(k)
     else:
         return base_value
