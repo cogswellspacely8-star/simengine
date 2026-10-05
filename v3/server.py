@@ -253,10 +253,21 @@ def handle_forecast_record(body):
         return {"error": "Provide numeric 'predicted_prob' in [0, 1]"}, 400
     if not 0.0 <= prob <= 1.0:
         return {"error": "predicted_prob must be in [0, 1]"}, 400
+    baseline = body.get("baseline_prob")
+    if baseline is not None:
+        try:
+            baseline = float(baseline)
+        except (TypeError, ValueError):
+            return {"error": "baseline_prob must be numeric in [0, 1]"}, 400
+        if not 0.0 <= baseline <= 1.0:
+            return {"error": "baseline_prob must be in [0, 1]"}, 400
     fid = _ledger().record(question, prob, metric=body.get("metric"),
-                           config_hash=body.get("config_hash"), resolve_by=body.get("resolve_by"))
+                           config_hash=body.get("config_hash"), resolve_by=body.get("resolve_by"),
+                           baseline_prob=baseline, baseline_source=body.get("baseline_source"),
+                           model=body.get("model"))
     return {"id": fid, "question": question, "predicted_prob": prob,
-            "resolve_by": body.get("resolve_by")}, 200
+            "resolve_by": body.get("resolve_by"), "baseline_prob": baseline,
+            "baseline_source": body.get("baseline_source"), "model": body.get("model")}, 200
 
 
 def handle_resolve(body):
@@ -268,14 +279,20 @@ def handle_resolve(body):
         outcome = int(body.get("outcome"))
     except (TypeError, ValueError):
         return {"error": "Provide 'outcome' (0 or 1)"}, 400
+    outcome_value = body.get("outcome_value")
+    if outcome_value is not None:
+        try:
+            outcome_value = float(outcome_value)
+        except (TypeError, ValueError):
+            return {"error": "outcome_value must be numeric"}, 400
     led = _ledger()
     try:
-        led.resolve(fid, outcome)
+        led.resolve(fid, outcome, outcome_value=outcome_value)
     except KeyError:
         return {"error": f"No forecast with id {fid}"}, 404
     except ValueError as e:
         return {"error": str(e)}, 400
-    return {"id": fid, "outcome": outcome, "score": led.score()}, 200
+    return {"id": fid, "outcome": outcome, "outcome_value": outcome_value, "score": led.score()}, 200
 
 
 def handle_forecasts_list():
