@@ -100,7 +100,7 @@ parsed trees are reused across calls, and that cache can be disabled with
 - **Diagnostics** -- Convergence analysis (proves your sample size is sufficient), sensitivity analysis (ranks which inputs drive the output), deterministic baseline comparison (quantifies the value of simulation over spreadsheet math).
 - **Web UI** -- Histograms, trajectory fans, risk gauges, scenario comparison with control sweeps and input diffs, domain wizard, Bayesian update modal, export to standalone HTML report.
 - **AI agent integration** -- POST a config inline to `/api/simulate` and get structured results back. No files needed. LLMs can use SimEngine as a tool (`llms.txt` at the repo root and `GET /llms.txt` orient them).
-- **Validated calibration** -- A sqlite forecast ledger scores predictions with proper scoring rules (Brier / log-loss / CRPS), and the pipeline is backtested on ~2,800 walk-forward monthly forecasts over decades of public FRED data. Run it yourself: `cd v3 && python3 backtest.py` (offline, from committed snapshots). Results: [docs/backtests/](docs/backtests/2026-07-06-fred-monthly-calibration.md).
+- **Validated calibration** -- A sqlite forecast ledger scores predictions with proper scoring rules (Brier / log-loss / CRPS) and, when a baseline is recorded alongside each forecast, reports skill against it per model. The pipeline is backtested on ~2,800 walk-forward monthly forecasts over decades of public FRED data. Run it yourself: `cd v3 && python3 backtest.py` (offline, from committed snapshots). Results: [docs/backtests/](docs/backtests/2026-07-06-fred-monthly-calibration.md). For bucket questions priced from one run, `forecast_buckets.py` records and grades the whole set: [docs/market-loop.md](docs/market-loop.md).
 
 ---
 
@@ -189,6 +189,27 @@ All three variable categories (`parameters`, `controls`, `exogenous`) share the 
 | `bernoulli` | `p` | Binary yes/no events |
 | `poisson` | `lambda` | Counts of rare events |
 | `student_t` | `mean`, `scale`, `df`, `min?`, `max?` | Fat-tailed returns (use df=5 for equities) |
+| `beta` | `alpha`, `beta`, `low?`, `high?` | Rates and probabilities; exact Beta-Binomial posteriors |
+| `gamma` | `shape`, `scale` or `rate` | Positive rates and waiting times; exact Gamma-Poisson posteriors |
+| `categorical` | `values`, `probs?` | Regimes and scenarios (recession / flat / boom) |
+| `empirical` | `values`, `jitter?` | Bootstrap from observed data, no parametric assumption |
+
+### Stochastic Processes
+
+Processes are declared like distributions but carry their own value from step to
+step, so autocorrelated quantities are first-class instead of hand-rolled in
+`step_logic`. All parameters are per step; `z` is a standard-normal innovation
+(correlate two processes' shocks through the `correlations` array like any other pair).
+
+| Process | Params | Recursion |
+|---------|--------|-----------|
+| `random_walk` | `start`, `std`, `drift?`, `min?`, `max?` | `x = x_prev + drift + std*z` |
+| `gbm` | `start`, `sigma`, `mu?`, `min?`, `max?` | `x = x_prev * exp(mu + sigma*z)` (mu = per-step log drift; mean grows at mu + sigma²/2) |
+| `ar1` | `mean`, `phi`, `std`, `start?` | `x = mean + phi*(x_prev - mean) + std*z`, stationary for `\|phi\| < 1` |
+| `mean_reverting` | `mean`, `theta`, `std`, `start?` | `x = x_prev + theta*(mean - x_prev) + std*z` (discrete Ornstein-Uhlenbeck; theta = fraction of the gap closed per step) |
+
+See `domains/asset_price_paths.json` for two correlated GBM assets, a mean-reverting
+rate, and a maximum-drawdown metric built from persistent `step_logic` targets.
 | `correlated_normal` | `mean`, `std` | Normal with correlation support (via step_logic) |
 
 ### Step Logic
@@ -759,8 +780,8 @@ print(f"Effective rate (median): ${resp['stats']['effective_rate']['median']:,.0
 
 The `/api/simulate` response includes everything an agent needs to reason about the outcome:
 
-- `stats` -- Full distribution statistics for every metric (mean, median, std, p10/p25/p75/p90).
-- `safety` -- Pass/fail on every constraint with actual probabilities.
+- `stats` -- Full distribution statistics for every metric (mean, median, std, p10/p25/p75/p90), plus `ci95`: the Monte Carlo error on each of those estimates (and on `binary_prob` for indicator metrics).
+- `safety` -- Pass/fail on every constraint with actual probabilities, a 95% interval on each chance-constraint probability, and a `borderline` flag when the limit falls inside it.
 - `fitness` -- Single scalar score for comparing scenarios.
 - `narrative` -- Human-readable summary text.
 - `trajectories` -- Time-series percentile bands for trend analysis.
@@ -828,6 +849,7 @@ The first adapter, `feeds/polymarket.py`, turns a live Polymarket prediction-mar
 from feeds import polymarket
 markets = polymarket.fetch_markets(query="fed rate", limit=5)
 prior = polymarket.market_prior(markets[0], strength=20)   # -> a triangular variable_def
+# or distribution="beta" for an exactly-updatable Beta(p*strength, (1-p)*strength) prior
 ```
 
 See [`docs/feeds.md`](docs/feeds.md). Market prices are treated as internal simulation inputs, never a rebroadcast feed or trade signal.

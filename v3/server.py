@@ -100,9 +100,22 @@ def build_histograms(raw_metrics, stats, n_bins=40):
     return histograms
 
 
+def _fmt_value(v, fmt):
+    """Render a threshold / CVaR value in the metric's own format. Previously
+    chance-constraint thresholds were always printed as integers (a 0.20
+    drawdown limit showed as 0) and CVaR values always with a dollar sign."""
+    if fmt == "dollar":
+        return f"${v:,.0f}"
+    if fmt == "percent":
+        return f"{v * 100:.1f}%" if abs(v) < 1 else f"{v:,.1f}"
+    return f"{v:,.2f}" if abs(v) < 100 else f"{v:,.0f}"
+
+
 def generate_narrative(stats, safety, config_data):
     lines = []
     context = config_data.get("context", {})
+    metric_fmt = {m: (s.get("format", "number") if isinstance(s, dict) else "number")
+                  for m, s in (stats or {}).items()}
 
     if context.get("decision"):
         lines.append(f"**The question:** {context['decision']}")
@@ -113,8 +126,10 @@ def generate_narrative(stats, safety, config_data):
 
         prob = indicator_probability(s)
         if prob is not None:
+            ci = (s.get("ci95") or {}).get("binary_prob")
+            band = f" (95% interval {ci[0]*100:.0f}–{ci[1]*100:.0f}%)" if ci else ""
             lines.append(
-                f"**{label}**: about {prob * 100:.0f}% chance across all simulated scenarios."
+                f"**{label}**: about {prob * 100:.0f}% chance across all simulated scenarios{band}."
             )
             continue
 
@@ -145,17 +160,24 @@ def generate_narrative(stats, safety, config_data):
             violations = []
             for c in safety.get("chance", []):
                 if not c["passed"]:
+                    note = ""
+                    if c.get("borderline"):
+                        lo, hi = c["actual_prob_ci95"]
+                        note = (f"; borderline — the limit sits inside the "
+                                f"{lo*100:.0f}–{hi*100:.0f}% sampling interval, run more simulations")
                     violations.append(
                         f"There is a {c['actual_prob']*100:.0f}% chance of "
                         f"{c['metric'].replace('_',' ')} falling {c['condition']} "
-                        f"{c['threshold']:,.0f} (limit: {c['max_prob']*100:.0f}%)"
+                        f"{_fmt_value(c['threshold'], metric_fmt.get(c['metric']))} "
+                        f"(limit: {c['max_prob']*100:.0f}%{note})"
                     )
             for c in safety.get("cvar", []):
                 if not c["passed"]:
+                    fmt = metric_fmt.get(c['metric'])
                     violations.append(
                         f"In the worst {c['alpha']*100:.0f}% of scenarios, "
                         f"{c['metric'].replace('_',' ')} averages "
-                        f"${c['actual_cvar']:,.0f} (limit: ${c['min_cvar']:,.0f})"
+                        f"{_fmt_value(c['actual_cvar'], fmt)} (limit: {_fmt_value(c['min_cvar'], fmt)})"
                     )
             lines.append("**Risk warnings:**")
             for v in violations:
@@ -231,10 +253,21 @@ def handle_forecast_record(body):
         return {"error": "Provide numeric 'predicted_prob' in [0, 1]"}, 400
     if not 0.0 <= prob <= 1.0:
         return {"error": "predicted_prob must be in [0, 1]"}, 400
+    baseline = body.get("baseline_prob")
+    if baseline is not None:
+        try:
+            baseline = float(baseline)
+        except (TypeError, ValueError):
+            return {"error": "baseline_prob must be numeric in [0, 1]"}, 400
+        if not 0.0 <= baseline <= 1.0:
+            return {"error": "baseline_prob must be in [0, 1]"}, 400
     fid = _ledger().record(question, prob, metric=body.get("metric"),
-                           config_hash=body.get("config_hash"), resolve_by=body.get("resolve_by"))
+                           config_hash=body.get("config_hash"), resolve_by=body.get("resolve_by"),
+                           baseline_prob=baseline, baseline_source=body.get("baseline_source"),
+                           model=body.get("model"))
     return {"id": fid, "question": question, "predicted_prob": prob,
-            "resolve_by": body.get("resolve_by")}, 200
+            "resolve_by": body.get("resolve_by"), "baseline_prob": baseline,
+            "baseline_source": body.get("baseline_source"), "model": body.get("model")}, 200
 
 
 def handle_resolve(body):
@@ -246,14 +279,20 @@ def handle_resolve(body):
         outcome = int(body.get("outcome"))
     except (TypeError, ValueError):
         return {"error": "Provide 'outcome' (0 or 1)"}, 400
+    outcome_value = body.get("outcome_value")
+    if outcome_value is not None:
+        try:
+            outcome_value = float(outcome_value)
+        except (TypeError, ValueError):
+            return {"error": "outcome_value must be numeric"}, 400
     led = _ledger()
     try:
-        led.resolve(fid, outcome)
+        led.resolve(fid, outcome, outcome_value=outcome_value)
     except KeyError:
         return {"error": f"No forecast with id {fid}"}, 404
     except ValueError as e:
         return {"error": str(e)}, 400
-    return {"id": fid, "outcome": outcome, "score": led.score()}, 200
+    return {"id": fid, "outcome": outcome, "outcome_value": outcome_value, "score": led.score()}, 200
 
 
 def handle_forecasts_list():

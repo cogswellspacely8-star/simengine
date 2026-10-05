@@ -66,7 +66,12 @@ def crps_sample(samples, observation):
         raise ValueError("need at least one sample")
     n = len(samples)
     term1 = sum(abs(x - observation) for x in samples) / n
-    term2 = sum(abs(xi - xj) for xi in samples for xj in samples) / (2 * n * n)
+    # sum_{i,j} |x_i - x_j| = 2 * sum_i x_(i) * (2i - n + 1) over the sorted
+    # sample, so the double sum is O(n log n) instead of O(n^2) (a 5,000-path
+    # forecast took seconds per resolution with the naive form).
+    xs = sorted(samples)
+    pair_sum = 2.0 * sum(x * (2 * i - n + 1) for i, x in enumerate(xs))
+    term2 = pair_sum / (2 * n * n)
     return term1 - term2
 
 
@@ -85,9 +90,29 @@ CREATE TABLE IF NOT EXISTS forecasts (
     created_at     TEXT NOT NULL,
     resolve_by     TEXT,
     resolved_at    TEXT,
-    outcome        INTEGER
+    outcome        INTEGER,
+    baseline_prob  REAL,
+    baseline_source TEXT,
+    model          TEXT,
+    outcome_value  REAL
 );
 """
+
+# Columns added after the first release, with their types. Existing ledgers
+# are migrated in place with ALTER TABLE ADD COLUMN (sqlite keeps old rows,
+# new columns read as NULL), so a forecasts.db from any earlier version opens.
+#   baseline_prob / baseline_source : the comparison forecast recorded at the
+#       same time (a market price, a climatology rate). Skill is only
+#       meaningful against a baseline the model did not get to see resolve.
+#   model : free-text grouping key (domain name, model version) so calibration
+#       can be reported per model — the input to a learned trust weight.
+#   outcome_value : the realized continuous value, for CRPS over samples_json.
+_ADDED_COLUMNS = (
+    ("baseline_prob", "REAL"),
+    ("baseline_source", "TEXT"),
+    ("model", "TEXT"),
+    ("outcome_value", "REAL"),
+)
 
 
 def _utcnow():
@@ -97,6 +122,27 @@ def _utcnow():
 # A reliability diagram over a handful of resolved forecasts is statistical
 # noise that would imply a track record that doesn't exist; gate it.
 MIN_RESOLVED_FOR_CURVE = 10
+
+
+def _baseline_block(rows):
+    """Model vs baseline on the subset of resolved rows that recorded a
+    baseline. brier_skill = 1 - brier_model / brier_baseline: positive means
+    the model beat the baseline it was compared against at record time."""
+    paired = [r for r in rows if r.get("baseline_prob") is not None]
+    if not paired:
+        return None
+    outs = [r["outcome"] for r in paired]
+    model_b = brier_score([r["predicted_prob"] for r in paired], outs)
+    base_b = brier_score([r["baseline_prob"] for r in paired], outs)
+    sources = sorted({r.get("baseline_source") for r in paired if r.get("baseline_source")})
+    return {
+        "n": len(paired),
+        "brier": round(base_b, 4),
+        "log_loss": round(log_loss([r["baseline_prob"] for r in paired], outs), 4),
+        "model_brier_on_same": round(model_b, 4),
+        "brier_skill": round(1.0 - model_b / base_b, 4) if base_b > 0 else None,
+        "sources": sources,
+    }
 
 
 class CalibrationLedger:
@@ -111,40 +157,74 @@ class CalibrationLedger:
         self.conn = sqlite3.connect(db_path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute(_SCHEMA)
+        self._migrate()
         self.conn.commit()
 
+    def _migrate(self):
+        existing = {row["name"] for row in self.conn.execute("PRAGMA table_info(forecasts)")}
+        for name, ctype in _ADDED_COLUMNS:
+            if name not in existing:
+                self.conn.execute(f"ALTER TABLE forecasts ADD COLUMN {name} {ctype}")
+
     def record(self, question, predicted_prob, *, config_hash=None,
-               metric=None, samples=None, created_at=None, resolve_by=None):
+               metric=None, samples=None, created_at=None, resolve_by=None,
+               baseline_prob=None, baseline_source=None, model=None):
         """Log a forecast. Returns its integer id (use it to resolve later).
 
         resolve_by: optional ISO date string for when the outcome is known.
+        baseline_prob / baseline_source: the comparison forecast at record
+            time (market price, climatology). Record it NOW — a baseline looked
+            up after the fact is not a baseline.
+        model: grouping key for per-model calibration (domain / model name).
         """
         if not 0.0 <= predicted_prob <= 1.0:
             raise ValueError("predicted_prob must be in [0, 1]")
+        if baseline_prob is not None and not 0.0 <= baseline_prob <= 1.0:
+            raise ValueError("baseline_prob must be in [0, 1]")
         samples_json = json.dumps(list(samples)) if samples is not None else None
         cur = self.conn.execute(
             "INSERT INTO forecasts "
-            "(question, predicted_prob, config_hash, metric, samples_json, created_at, resolve_by) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "(question, predicted_prob, config_hash, metric, samples_json, created_at, resolve_by, "
+            " baseline_prob, baseline_source, model) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (question, predicted_prob, config_hash, metric, samples_json,
-             created_at or _utcnow(), resolve_by),
+             created_at or _utcnow(), resolve_by, baseline_prob, baseline_source, model),
         )
         self.conn.commit()
         return int(cur.lastrowid)
+
+    def pending(self, *, config_hash=None, model=None):
+        """Unresolved forecasts, oldest first, optionally filtered."""
+        sql = "SELECT * FROM forecasts WHERE outcome IS NULL"
+        args = []
+        if config_hash is not None:
+            sql += " AND config_hash = ?"
+            args.append(config_hash)
+        if model is not None:
+            sql += " AND model = ?"
+            args.append(model)
+        rows = self.conn.execute(sql + " ORDER BY id", args).fetchall()
+        return [dict(r) for r in rows]
 
     def all_forecasts(self):
         """Every forecast (pending and resolved), oldest first."""
         rows = self.conn.execute("SELECT * FROM forecasts ORDER BY id").fetchall()
         return [dict(r) for r in rows]
 
-    def resolve(self, forecast_id, outcome, *, resolved_at=None):
-        """Record the realized binary outcome (0 or 1) for a logged forecast."""
+    def resolve(self, forecast_id, outcome, *, resolved_at=None, outcome_value=None):
+        """Record the realized binary outcome (0 or 1) for a logged forecast.
+
+        outcome_value: the realized continuous value, if the question was a
+        threshold on one; enables CRPS when the forecast stored samples.
+        """
         o = int(outcome)
         if o not in (0, 1):
             raise ValueError("outcome must be 0 or 1")
+        if outcome_value is not None:
+            outcome_value = float(outcome_value)
         cur = self.conn.execute(
-            "UPDATE forecasts SET outcome = ?, resolved_at = ? WHERE id = ?",
-            (o, resolved_at or _utcnow(), forecast_id),
+            "UPDATE forecasts SET outcome = ?, resolved_at = ?, outcome_value = ? WHERE id = ?",
+            (o, resolved_at or _utcnow(), outcome_value, forecast_id),
         )
         self.conn.commit()
         if cur.rowcount == 0:
@@ -165,13 +245,66 @@ class CalibrationLedger:
         """
         rows = self.resolved()
         if not rows:
-            return {"n": 0, "brier": None, "log_loss": None}
+            return {"n": 0, "brier": None, "log_loss": None, "baseline": None}
         preds = [r["predicted_prob"] for r in rows]
         outs = [r["outcome"] for r in rows]
         return {
             "n": len(rows),
             "brier": brier_score(preds, outs),
             "log_loss": log_loss(preds, outs),
+            "baseline": _baseline_block(rows),
+        }
+
+    def by_model(self):
+        """Per-model scores over resolved forecasts (model NULL -> 'unspecified').
+        This is the table a trust weight (how much to blend the model vs the
+        baseline) is learned from."""
+        groups = {}
+        for r in self.resolved():
+            groups.setdefault(r.get("model") or "unspecified", []).append(r)
+        out = []
+        for name in sorted(groups):
+            rows = groups[name]
+            preds = [r["predicted_prob"] for r in rows]
+            outs = [r["outcome"] for r in rows]
+            out.append({
+                "model": name,
+                "n": len(rows),
+                "brier": round(brier_score(preds, outs), 4),
+                "log_loss": round(log_loss(preds, outs), 4),
+                "base_rate": round(sum(outs) / len(outs), 4),
+                "baseline": _baseline_block(rows),
+            })
+        return out
+
+    def continuous_report(self):
+        """CRPS over forecasts that stored samples and were resolved with an
+        outcome_value. The reference is the point forecast at the sample median
+        (CRPS of a point forecast is its absolute error), so crps_skill is
+        'how much better than just reporting the median'."""
+        rows = [r for r in self.resolved()
+                if r.get("samples_json") and r.get("outcome_value") is not None]
+        if not rows:
+            return {"n": 0, "crps": None, "point_mae": None, "crps_skill_vs_point": None}
+        crps_vals, mae_vals = [], []
+        for r in rows:
+            samples = json.loads(r["samples_json"])
+            if not samples:
+                continue
+            y = r["outcome_value"]
+            crps_vals.append(crps_sample(samples, y))
+            xs = sorted(samples)
+            median = xs[len(xs) // 2] if len(xs) % 2 else 0.5 * (xs[len(xs) // 2 - 1] + xs[len(xs) // 2])
+            mae_vals.append(abs(median - y))
+        if not crps_vals:
+            return {"n": 0, "crps": None, "point_mae": None, "crps_skill_vs_point": None}
+        crps = sum(crps_vals) / len(crps_vals)
+        mae = sum(mae_vals) / len(mae_vals)
+        return {
+            "n": len(crps_vals),
+            "crps": round(crps, 6),
+            "point_mae": round(mae, 6),
+            "crps_skill_vs_point": round(1.0 - crps / mae, 4) if mae > 0 else None,
         }
 
     def reliability_curve(self, n_bins=10):
@@ -236,7 +369,8 @@ class CalibrationLedger:
         n = len(rows)
         if n == 0:
             return {"n": 0, "brier": None, "log_loss": None, "base_rate": None,
-                    "ready": False, "min_n": min_n, "curve": None, "ece": None}
+                    "ready": False, "min_n": min_n, "curve": None, "ece": None,
+                    "baseline": None, "by_model": [], "continuous": self.continuous_report()}
         preds = [r["predicted_prob"] for r in rows]
         outs = [r["outcome"] for r in rows]
         ready = n >= min_n
@@ -249,4 +383,7 @@ class CalibrationLedger:
             "min_n": min_n,
             "curve": self.reliability_curve(n_bins) if ready else None,
             "ece": self.expected_calibration_error(n_bins) if ready else None,
+            "baseline": _baseline_block(rows),
+            "by_model": self.by_model(),
+            "continuous": self.continuous_report(),
         }

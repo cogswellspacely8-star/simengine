@@ -13,7 +13,7 @@ Design informed by:
   - ChatGPT-4o critique (March 2026)
 """
 
-import json, random, math, copy, time, statistics, sys, hashlib, os
+import ast, json, random, math, copy, time, statistics, sys, hashlib, os, threading
 from dataclasses import dataclass, field
 from typing import Any, Optional
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -22,6 +22,17 @@ try:
     import native as native_runtime
 except Exception:
     native_runtime = None
+
+# Single source of truth for the engine version stamped into manifests and the
+# MCP serverInfo. Must match pyproject.toml / v3/__init__.py / server.json
+# (test_packaging_invariants enforces the lockstep).
+KERNEL_VERSION = "3.0.1"
+
+# Monte Carlo runs seed and draw from the process-global `random` module. Under
+# ThreadingHTTPServer two concurrent /api/simulate requests would otherwise
+# interleave draws and break seed reproducibility, so runs are serialized.
+# Reentrant because evolve() -> _worker() -> run_monte_carlo() nests in-process.
+SIM_LOCK = threading.RLock()
 
 # ---------------------------------------------------------------------------
 # Distribution Samplers
@@ -57,11 +68,19 @@ def _bernoulli(p): return 1.0 if random.random() < p["p"] else 0.0
 
 @sampler("poisson")
 def _poisson(p):
-    L = math.exp(-p["lambda"])
-    k, pr = 0, 1.0
-    while pr > L:
-        k += 1; pr *= random.random()
-    return float(k - 1)
+    # Exponential inter-arrival form of Knuth's method: count arrivals of a
+    # unit-rate Poisson process before time lambda. Exact for any lambda and
+    # immune to the exp(-lambda) underflow that capped the product form at
+    # ~745 regardless of lambda (lambda=2000 used to return ~720).
+    lam = float(p["lambda"])
+    if lam <= 0:
+        return 0.0
+    k, t = 0, 0.0
+    while True:
+        t -= math.log(1.0 - random.random())
+        if t > lam:
+            return float(k)
+        k += 1
 
 @sampler("student_t")
 def _student_t(p):
@@ -73,6 +92,125 @@ def _student_t(p):
     t = z / math.sqrt(v / df) if v > 0 else z
     result = p.get("mean", 0) + p.get("scale", 1) * t
     return max(p.get("min", -1e18), min(p.get("max", 1e18), result))
+
+@sampler("beta")
+def _beta(p):
+    # Beta(alpha, beta) on [low, high] (defaults [0, 1]). First-class so a
+    # Beta-Binomial posterior can be sampled exactly instead of being squashed
+    # back into a triangular.
+    lo, hi = p.get("low", 0.0), p.get("high", 1.0)
+    return lo + (hi - lo) * random.betavariate(p["alpha"], p["beta"])
+
+@sampler("gamma")
+def _gamma(p):
+    # Gamma(shape, scale); accepts `rate` (= 1/scale) instead of `scale`.
+    scale = p["scale"] if "scale" in p else 1.0 / p["rate"]
+    return random.gammavariate(p["shape"], scale)
+
+@sampler("categorical")
+def _categorical(p):
+    # Discrete outcome from `values` with optional `probs` (normalized;
+    # uniform when absent). Values are usually numbers so expressions can
+    # compare them (regime == 2), but any JSON scalar is allowed.
+    values = p["values"]
+    probs = p.get("probs")
+    if probs:
+        return random.choices(values, weights=probs, k=1)[0]
+    return random.choice(values)
+
+@sampler("empirical")
+def _empirical(p):
+    # Bootstrap from observed `values`; optional gaussian `jitter` (a std)
+    # turns it into a smoothed (kernel-density) bootstrap.
+    v = random.choice(p["values"])
+    jitter = p.get("jitter", 0)
+    return v + random.gauss(0, jitter) if jitter else v
+
+# Param keys each sampler requires. validation.py reads this so a missing key
+# is a named design-time error instead of a KeyError inside the test run.
+# A "$name" late-binding string satisfies a requirement. `gamma` needs one of
+# scale/rate (checked separately in validation).
+REQUIRED_PARAMS = {
+    "fixed": ("value",), "uniform": ("low", "high"),
+    "triangular": ("low", "mode", "high"), "normal": ("mean", "std"),
+    "lognormal": ("median", "spread"), "bernoulli": ("p",),
+    "poisson": ("lambda",), "student_t": (),
+    "beta": ("alpha", "beta"), "gamma": ("shape",),
+    "categorical": ("values",), "empirical": ("values",),
+}
+
+# ---------------------------------------------------------------------------
+# Stochastic processes (variables with memory across steps)
+# ---------------------------------------------------------------------------
+# A process is sampled like a distribution but receives the variable's own
+# previous value, so autocorrelated quantities (prices, rates, demand levels)
+# are first-class instead of hand-rolled in step_logic. Each takes
+# (params, prev, z): prev is None at step 1 (use `start`), z is a standard
+# normal innovation supplied by the caller — the copula path supplies a
+# correlated z, so two processes' shocks can be correlated like any other
+# pair of variables. All parameters are per step.
+PROCESSES = {}
+
+
+def process(name):
+    def dec(fn):
+        PROCESSES[name] = fn
+        return fn
+    return dec
+
+
+def _clamped(p, v):
+    return max(p.get("min", -1e18), min(p.get("max", 1e18), v))
+
+
+@process("random_walk")
+def _random_walk(p, prev, z):
+    # x_t = x_{t-1} + drift + std * z
+    x = p["start"] if prev is None else prev
+    return _clamped(p, x + p.get("drift", 0.0) + p["std"] * z)
+
+
+@process("gbm")
+def _gbm(p, prev, z):
+    # Geometric Brownian motion as a log random walk:
+    #   x_t = x_{t-1} * exp(mu + sigma * z)
+    # mu is the per-step log drift (median growth exp(mu) per step); the mean
+    # grows by exp(mu + sigma^2 / 2). Pass mu = r - sigma^2/2 if you want the
+    # mean to grow at r. Strictly positive.
+    x = p["start"] if prev is None else prev
+    return _clamped(p, x * math.exp(p.get("mu", 0.0) + p["sigma"] * z))
+
+
+@process("ar1")
+def _ar1(p, prev, z):
+    # x_t = mean + phi * (x_{t-1} - mean) + std * z ; stationary for |phi| < 1
+    # with long-run variance std^2 / (1 - phi^2). start defaults to mean.
+    mean = p["mean"]
+    x = p.get("start", mean) if prev is None else prev
+    return _clamped(p, mean + p["phi"] * (x - mean) + p["std"] * z)
+
+
+@process("mean_reverting")
+def _mean_reverting(p, prev, z):
+    # Discretized Ornstein-Uhlenbeck: x_t = x_{t-1} + theta * (mean - x_{t-1}) + std * z.
+    # theta in [0, 1] is the fraction of the gap closed per step (identical to
+    # ar1 with phi = 1 - theta; offered because practitioners think in speed).
+    mean = p["mean"]
+    x = p.get("start", mean) if prev is None else prev
+    return _clamped(p, x + p["theta"] * (mean - x) + p["std"] * z)
+
+
+PROCESS_NOISE_PARAM = {"random_walk": "std", "gbm": "sigma", "ar1": "std", "mean_reverting": "std"}
+
+REQUIRED_PARAMS.update({
+    "random_walk": ("start", "std"), "gbm": ("start", "sigma"),
+    "ar1": ("mean", "phi", "std"), "mean_reverting": ("mean", "theta", "std"),
+})
+
+
+def is_process(dist):
+    return dist in PROCESSES
+
 
 def _binomial(n, p):
     trials = max(0, int(round(n)))
@@ -117,7 +255,12 @@ def generate_correlated_normals(L, n):
     return [sum(L[i][j] * z[j] for j in range(i + 1)) for i in range(n)]
 
 def normal_cdf_inv_approx(p):
-    """Approximate inverse normal CDF (Beasley-Springer-Moro algorithm)."""
+    """Approximate inverse normal CDF.
+
+    Abramowitz & Stegun 26.2.23 rational approximation (|error| < 4.5e-4),
+    not Beasley-Springer-Moro as previously labelled. Saturates at +/-4 for
+    p outside (0, 1). Kept for callers; the kernel itself does not use it.
+    """
     if p <= 0: return -4.0
     if p >= 1: return 4.0
     if p == 0.5: return 0.0
@@ -129,14 +272,53 @@ def normal_cdf_inv_approx(p):
     return result if p > 0.5 else -result
 
 def normal_cdf_approx(x):
-    """Approximate standard normal CDF."""
+    """Approximate standard normal CDF (Abramowitz & Stegun 26.2.17, |error| < 7.5e-8)."""
     t = 1.0 / (1.0 + 0.2316419 * abs(x))
     d = 0.3989422804014327  # 1/sqrt(2*pi)
     p = d * math.exp(-x * x / 2.0) * t * (0.319381530 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))))
     return 1.0 - p if x > 0 else p
 
+_QUANTILE_TABLE_CACHE = {}
+_QUANTILE_TABLE_POINTS = 2048
+_QUANTILE_TABLE_DRAWS = 40000
+
+
+def _quantile_table(dist, params):
+    """Monte Carlo quantile table for distributions with no closed-form
+    inverse CDF (beta, gamma, ...). Built once per (dist, params) from a
+    private RNG so the main seeded stream is untouched; lookups are O(1).
+    Quantile error is O(1/sqrt(draws)), well inside Monte Carlo noise."""
+    key = (dist, json.dumps(params, sort_keys=True, default=str))
+    table = _QUANTILE_TABLE_CACHE.get(key)
+    if table is None:
+        rng = random.Random(hash(key) & 0xFFFFFFFF)
+        saved = random.getstate()
+        random.setstate(rng.getstate())
+        try:
+            draws = sorted(SAMPLERS[dist](params) for _ in range(_QUANTILE_TABLE_DRAWS))
+        finally:
+            random.setstate(saved)
+        n = len(draws)
+        table = [draws[min(n - 1, int(i * (n - 1) / (_QUANTILE_TABLE_POINTS - 1)))]
+                 for i in range(_QUANTILE_TABLE_POINTS)]
+        if len(_QUANTILE_TABLE_CACHE) >= 256:
+            _QUANTILE_TABLE_CACHE.clear()
+        _QUANTILE_TABLE_CACHE[key] = table
+    return table
+
+
+def _table_quantile(table, u):
+    pos = u * (len(table) - 1)
+    i = int(pos)
+    if i >= len(table) - 1:
+        return table[-1]
+    frac = pos - i
+    return table[i] * (1 - frac) + table[i + 1] * frac
+
+
 def apply_correlation_to_sample(base_value, var_def, correlated_z):
-    """Transform a correlated standard normal into the variable's distribution."""
+    """Transform a correlated standard normal into the variable's distribution
+    (Gaussian copula: z -> u = Phi(z) -> F^{-1}(u))."""
     # Convert correlated Z to uniform via normal CDF, then to target distribution
     u = normal_cdf_approx(correlated_z)  # uniform [0,1]
     dist = var_def.get("distribution", "fixed")
@@ -162,16 +344,61 @@ def apply_correlation_to_sample(base_value, var_def, correlated_z):
         median, spread = params.get("median", 1), params.get("spread", 0.5)
         v = median * math.exp(spread * correlated_z)
         return max(params.get("min", 0), min(params.get("max", 1e18), v))
+    elif dist == "student_t":
+        # Gaussian-copula t: the correlated z supplies the numerator so the
+        # dependence structure survives; an independent chi-square supplies the
+        # fat tail, matching the marginal sampler. Previously fell through to
+        # `return base_value` (= 0): a correlated student_t variable was
+        # silently constant zero.
+        df = max(1, int(round(params.get("df", 5))))
+        v = sum(random.gauss(0, 1) ** 2 for _ in range(df))
+        t = correlated_z / math.sqrt(v / df) if v > 0 else correlated_z
+        result = params.get("mean", 0) + params.get("scale", 1) * t
+        return max(params.get("min", -1e18), min(params.get("max", 1e18), result))
     elif dist == "bernoulli":
         return 1.0 if u < params.get("p", 0.5) else 0.0
     elif dist == "poisson":
-        # Use inverse CDF for Poisson
-        lam = params.get("lambda", 1)
-        k, p_cum = 0, math.exp(-lam)
-        while u > p_cum and k < 100:
+        # Inverse CDF for Poisson. The pmf is accumulated recursively
+        # (pmf(k) = pmf(k-1) * lam / k) instead of re-summing log k! each
+        # step, and the search bound scales with lambda instead of the old
+        # fixed cap of 100, which biased any correlated Poisson with a large
+        # rate low. For lambda beyond ~700 exp(-lam) underflows, so use the
+        # normal approximation there (continuity-corrected, clamped at 0).
+        lam = float(params.get("lambda", 1))
+        if lam <= 0:
+            return 0.0
+        if lam > 700:
+            return float(max(0, int(round(lam + correlated_z * math.sqrt(lam)))))
+        k_max = int(lam + 12 * math.sqrt(lam) + 50)
+        k, pmf = 0, math.exp(-lam)
+        p_cum = pmf
+        while u > p_cum and k < k_max:
             k += 1
-            p_cum += math.exp(-lam + k * math.log(lam) - sum(math.log(i) for i in range(1, k + 1)))
+            pmf *= lam / k
+            p_cum += pmf
         return float(k)
+    elif dist == "categorical":
+        values = params.get("values", [0])
+        probs = params.get("probs")
+        if probs:
+            total = float(sum(probs))
+            acc = 0.0
+            for v, w in zip(values, probs):
+                acc += w / total
+                if u <= acc:
+                    return v
+            return values[-1]
+        return values[min(len(values) - 1, int(u * len(values)))]
+    elif dist == "empirical":
+        values = sorted(params.get("values", [0]))
+        v = values[min(len(values) - 1, int(u * len(values)))]
+        jitter = params.get("jitter", 0)
+        return v + random.gauss(0, jitter) if jitter else v
+    elif dist in SAMPLERS:
+        # No closed-form inverse CDF (beta, gamma, future samplers): go
+        # through a cached Monte Carlo quantile table so the copula still
+        # applies instead of silently dropping the correlation.
+        return _table_quantile(_quantile_table(dist, params), u)
     else:
         return base_value
 
@@ -192,27 +419,105 @@ NATIVE_BATCH_SAMPLER_DISTRIBUTIONS = {
 
 _INVALID_EXPR = object()
 _COMPILED_EXPR_CACHE = {}
+# Bound the compiled-expression cache. Configs are user/LLM-authored, so a long
+# running server would otherwise accumulate one entry per distinct expression
+# string it has ever seen.
+_COMPILED_EXPR_CACHE_MAX = 4096
+
+# Expression syntax the kernel will evaluate. Expressions are arithmetic over
+# plain names and whitelisted calls; everything that could reach past the
+# `SAFE_BUILTINS` namespace (attribute access, subscripts, lambdas,
+# comprehensions, walrus, starred, f-strings, dunder names) is rejected BEFORE
+# compile. validation.py flags the same constructs with friendlier messages;
+# this is the enforcement point that holds even when a config bypasses
+# /api/validate (inline /api/simulate, MCP tools, library use).
+_FORBIDDEN_EXPR_NODES = (
+    ast.Attribute, ast.Subscript, ast.Lambda, ast.ListComp, ast.SetComp,
+    ast.DictComp, ast.GeneratorExp, ast.NamedExpr, ast.Starred, ast.JoinedStr,
+    ast.Await, ast.Yield, ast.YieldFrom,
+)
+
+
+def _tree_violation(tree):
+    for node in ast.walk(tree):
+        if isinstance(node, _FORBIDDEN_EXPR_NODES):
+            return f"{type(node).__name__} is not allowed in expressions"
+        if isinstance(node, ast.Name) and node.id.startswith("__"):
+            return f"name '{node.id}' is not allowed in expressions"
+    return None
+
+
+def expression_violation(expr):
+    """Return a human-readable reason this expression is not allowed, else None."""
+    if not isinstance(expr, str):
+        return "expression must be a string"
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except (SyntaxError, ValueError) as e:
+        return f"invalid syntax ({getattr(e, 'msg', e)})"
+    return _tree_violation(tree)
+
+
+def iter_config_expressions(data):
+    """Yield (label, expr) for every expression string a config asks the kernel
+    to evaluate: step_logic, accumulators, metrics, fitness components."""
+    for i, step in enumerate(data.get("step_logic", []) or []):
+        if isinstance(step, dict) and "expr" in step:
+            yield (f"step_logic[{i}]", step["expr"])
+    acc = data.get("accumulators")
+    if isinstance(acc, dict):
+        for k, v in acc.items():
+            yield (f"accumulator '{k}'", v)
+    metrics = data.get("metrics")
+    if isinstance(metrics, dict):
+        for k, m in metrics.items():
+            if isinstance(m, dict) and "expr" in m:
+                yield (f"metric '{k}'", m["expr"])
+    fitness = data.get("fitness")
+    if isinstance(fitness, dict):
+        for i, comp in enumerate(fitness.get("components", []) or []):
+            if isinstance(comp, dict) and "expr" in comp:
+                yield (f"fitness.components[{i}]", comp["expr"])
+
+
+def check_config_expressions(data):
+    """Raise ValueError naming the first expression that uses forbidden syntax."""
+    for label, expr in iter_config_expressions(data):
+        reason = expression_violation(expr)
+        if reason is not None:
+            raise ValueError(f"{label}: {reason}")
+
 
 def clear_eval_expr_cache():
     _COMPILED_EXPR_CACHE.clear()
 
 
+def _compile_expr_unchecked(expr):
+    # Parse once, screen the tree, then compile the same tree to bytecode
+    # (two compile() calls per unique expression; the cache makes that once).
+    try:
+        tree = ast.parse(expr, mode="eval")
+    except Exception:
+        return _INVALID_EXPR
+    if _tree_violation(tree) is not None:
+        return _INVALID_EXPR
+    try:
+        return compile(tree, "<simengine-expr>", "eval")
+    except Exception:
+        return _INVALID_EXPR
+
+
 def _compile_expr_cached(expr):
     if os.environ.get("SIMENGINE_DISABLE_EXPR_CACHE"):
-        try:
-            return compile(expr, "<simengine-expr>", "eval")
-        except Exception:
-            return _INVALID_EXPR
+        return _compile_expr_unchecked(expr)
 
     cached = _COMPILED_EXPR_CACHE.get(expr)
     if cached is not None:
         return cached
 
-    try:
-        compiled = compile(expr, "<simengine-expr>", "eval")
-    except Exception:
-        compiled = _INVALID_EXPR
-
+    compiled = _compile_expr_unchecked(expr)
+    if len(_COMPILED_EXPR_CACHE) >= _COMPILED_EXPR_CACHE_MAX:
+        _COMPILED_EXPR_CACHE.clear()
     _COMPILED_EXPR_CACHE[expr] = compiled
     return compiled
 
@@ -223,29 +528,57 @@ def eval_expr(expr, state):
         return 0
     try:
         return eval(compiled, {"__builtins__": SAFE_BUILTINS}, state)
-    except:
+    except Exception:
         return 0
 
-def sample_var(var_def, state):
+def _resolve_params(var_def, state):
     params = {}
     for k, v in var_def.get("params", {}).items():
         if isinstance(v, str) and v.startswith("$"):
             params[k] = state.get(v[1:], 0)
         else:
             params[k] = v
-    return SAMPLERS[var_def["distribution"]](params)
+    return params
+
+
+def sample_var(var_def, state, name=None, z=None):
+    """Draw one value. For a process the variable's previous value is read
+    from state[name] (None at step 1); z is an optional standard normal
+    innovation (the copula path passes a correlated one)."""
+    params = _resolve_params(var_def, state)
+    dist = var_def["distribution"]
+    if dist in PROCESSES:
+        prev = state.get(name) if name is not None else None
+        if z is None:
+            z = random.gauss(0, 1)
+        return PROCESSES[dist](params, prev, z)
+    return SAMPLERS[dist](params)
 
 # ---------------------------------------------------------------------------
 # Experiment Manifest
 # ---------------------------------------------------------------------------
 def make_manifest(config_path, n_sims, seed, extra=None):
-    """Addresses reproducibility critique: every run is traceable."""
-    config_text = json.dumps(config_path) if isinstance(config_path, dict) else open(config_path).read()
+    """Addresses reproducibility critique: every run is traceable.
+
+    config_hash is taken over the CANONICAL json of the config (recursively
+    sorted keys, no insignificant whitespace, UTF-8), so reordering keys or
+    reformatting whitespace leaves the hash unchanged while any change to a value
+    changes it. It does NOT normalize value *content*: NFC vs NFD unicode, or an
+    int vs the same number written as a float, are treated as different models.
+    """
+    if isinstance(config_path, dict):
+        data = config_path
+    else:
+        with open(config_path, encoding="utf-8") as f:
+            data = json.load(f)
+    canonical = json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return {
-        "config_hash": hashlib.sha256(config_text.encode()).hexdigest()[:16],
+        # surrogatepass: a lone surrogate is valid JSON and json.load accepts it;
+        # plain utf-8 encode would raise, where the old raw-text path did not.
+        "config_hash": hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()[:16],
         "n_simulations": n_sims,
         "seed": seed,
-        "kernel_version": "3.0.0",
+        "kernel_version": KERNEL_VERSION,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "extra": extra or {},
     }
@@ -303,6 +636,11 @@ class DomainConfig:
         
         # v3: calibration metadata
         self.calibration = data.get("calibration", {})
+
+        # Enforce the expression allow-list at load time so a config using
+        # forbidden syntax fails loudly (ValueError -> HTTP 400 / tool error)
+        # instead of silently evaluating to 0 or reaching eval() at all.
+        check_config_expressions(data)
 
         # v3.1: correlations between variables
         # Format: [{"vars": ["var_a", "var_b"], "rho": 0.6}, ...]
@@ -367,6 +705,10 @@ def simulate_one(config, sampled_steps=None):
             precomputed = sampled_steps.get(vname) if sampled_steps else None
             if precomputed is not None and (step - 1) < len(precomputed):
                 state[vname] = precomputed[step - 1]
+            elif vdef.get("distribution") in PROCESSES:
+                # Processes keep their own state; a correlated z (if any) is
+                # the innovation, not a quantile.
+                state[vname] = sample_var(vdef, state, name=vname, z=corr_samples.get(vname))
             elif vname in corr_samples:
                 state[vname] = apply_correlation_to_sample(0, vdef, corr_samples[vname])
             else:
@@ -378,7 +720,7 @@ def simulate_one(config, sampled_steps=None):
             if "expr" in logic:
                 state[target] = eval_expr(logic["expr"], state)
             elif "sample" in logic:
-                state[target] = sample_var(logic["sample"], state)
+                state[target] = sample_var(logic["sample"], state, name=target)
             step_rec[target] = state[target]
         
         for acc, expr in config.accumulators.items():
@@ -415,7 +757,7 @@ def _build_native_variable_plan(config):
     plan = {}
     for vname, vdef in config.all_variables.items():
         distribution = vdef.get("distribution")
-        if distribution not in NATIVE_BATCH_SAMPLER_DISTRIBUTIONS:
+        if distribution not in NATIVE_BATCH_SAMPLER_DISTRIBUTIONS or distribution in PROCESSES:
             return None
 
         params = {}
@@ -482,13 +824,16 @@ def _compute_stats_python(all_metrics, metric_formats):
             continue
         sv = sorted(vals)
         stats[mname] = {
-            "mean": round(statistics.mean(vals), 2),
-            "median": round(statistics.median(vals), 2),
-            "std": round(statistics.stdev(vals), 2) if len(vals) > 1 else 0,
-            "p10": round(percentile(sv, 10), 2),
-            "p25": round(percentile(sv, 25), 2),
-            "p75": round(percentile(sv, 75), 2),
-            "p90": round(percentile(sv, 90), 2),
+            # 4 dp, not 2: metrics on a 0..1 scale (rates, probabilities) lost
+            # everything past the hundredths. Mirrored in the native reducer
+            # (crates/simengine-core/src/stats.rs).
+            "mean": round(statistics.mean(vals), 4),
+            "median": round(statistics.median(vals), 4),
+            "std": round(statistics.stdev(vals), 4) if len(vals) > 1 else 0,
+            "p10": round(percentile(sv, 10), 4),
+            "p25": round(percentile(sv, 25), 4),
+            "p75": round(percentile(sv, 75), 4),
+            "p90": round(percentile(sv, 90), 4),
             "format": metric_formats.get(mname, "number"),
         }
     return stats
@@ -533,6 +878,86 @@ def indicator_probability(stat):
     if isinstance(p, (int, float)) and not isinstance(p, bool) and 0 < p < 1:
         return p
     return None
+
+
+# ---------------------------------------------------------------------------
+# Monte Carlo error on the outputs
+# ---------------------------------------------------------------------------
+# A simulation's statistics are estimates with sampling error of their own.
+# Every metric gets a `ci95` block (analytic, O(n log n), identical on the
+# native and pure-Python paths because it is computed here from raw values):
+#   mean   : normal-theory interval, mean +/- 1.96 * std / sqrt(n)
+#   median, p10, p90 : distribution-free order-statistic intervals
+#   binary_prob      : Wilson score interval
+# Chance constraints get the same Wilson interval on actual_prob plus a
+# `borderline` flag when the limit lies inside it (pass/fail is then noise).
+_Z95 = 1.959964
+
+
+def wilson_interval(successes, n, z=_Z95):
+    """Wilson score interval for a binomial proportion; (0, 0) when n == 0."""
+    if n <= 0:
+        return (0.0, 0.0)
+    p = successes / n
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    lo = 0.0 if successes <= 0 else max(0.0, center - half)
+    hi = 1.0 if successes >= n else min(1.0, center + half)
+    return (lo, hi)
+
+
+def quantile_interval(sorted_vals, pct, z=_Z95):
+    """Distribution-free CI for the pct-th percentile from order statistics:
+    the sample quantile's rank is Binomial(n, p), so ranks n*p +/- z*sqrt(n p (1-p))
+    bracket the true quantile with ~95% coverage."""
+    n = len(sorted_vals)
+    if n == 0:
+        return (0.0, 0.0)
+    p = pct / 100.0
+    half = z * math.sqrt(n * p * (1 - p))
+    lo_i = max(0, int(math.floor(n * p - half)))
+    hi_i = min(n - 1, int(math.ceil(n * p + half)))
+    return (sorted_vals[lo_i], sorted_vals[hi_i])
+
+
+def _annotate_uncertainty(stats, all_metrics):
+    for mname, s in stats.items():
+        if not isinstance(s, dict):
+            continue
+        vals = all_metrics.get(mname)
+        if not vals:
+            continue
+        n = len(vals)
+        sv = sorted(vals)
+        mean = statistics.mean(vals)
+        se = (statistics.stdev(vals) / math.sqrt(n)) if n > 1 else 0.0
+        ci = {
+            "mean": [round(mean - _Z95 * se, 4), round(mean + _Z95 * se, 4)],
+            "median": [round(x, 4) for x in quantile_interval(sv, 50)],
+            "p10": [round(x, 4) for x in quantile_interval(sv, 10)],
+            "p90": [round(x, 4) for x in quantile_interval(sv, 90)],
+        }
+        p = s.get("binary_prob")
+        if isinstance(p, (int, float)) and not isinstance(p, bool):
+            k = int(round(p * n))
+            ci["binary_prob"] = [round(x, 4) for x in wilson_interval(k, n)]
+        s["ci95"] = ci
+        s["n"] = n
+    return stats
+
+
+def _annotate_safety_uncertainty(results, raw):
+    for cc in results.get("chance", []) or []:
+        vals = raw.get(cc.get("metric"), [])
+        n = len(vals)
+        if not n:
+            continue
+        k = int(round(cc["actual_prob"] * n))
+        lo, hi = wilson_interval(k, n)
+        cc["actual_prob_ci95"] = [round(lo, 4), round(hi, 4)]
+        cc["borderline"] = bool(lo <= cc["max_prob"] <= hi)
+    return results
 
 
 def _compute_trajectories_python(trajectory_samples):
@@ -624,6 +1049,11 @@ def _evaluate_safety_python(raw, safety_config):
 
 
 def run_monte_carlo(config, seed=None, n_override=None):
+    with SIM_LOCK:
+        return _run_monte_carlo_locked(config, seed=seed, n_override=n_override)
+
+
+def _run_monte_carlo_locked(config, seed=None, n_override=None):
     n = n_override or config.n_simulations
     if seed is not None:
         random.seed(seed)
@@ -659,9 +1089,11 @@ def run_monte_carlo(config, seed=None, n_override=None):
     if trajectories is None:
         trajectories = _compute_trajectories_python(trajectory_samples)
 
-    # Annotate indicator metrics with their event probability (works regardless
-    # of whether stats came from the native or pure-Python reducer).
+    # Annotate indicator metrics with their event probability, then every
+    # metric with its Monte Carlo error (both work regardless of whether stats
+    # came from the native or pure-Python reducer).
     _annotate_indicators(stats, all_metrics)
+    _annotate_uncertainty(stats, all_metrics)
 
     return {
         "domain": config.name, "n_simulations": n,
@@ -703,12 +1135,15 @@ def evaluate_safety(mc_result, safety_config):
     """
     raw = mc_result.get("raw_metrics", {})
     native_backend = _get_native_backend()
+    results = None
     if native_backend is not None:
         try:
-            return native_backend.evaluate_safety(raw, safety_config)
+            results = native_backend.evaluate_safety(raw, safety_config)
         except Exception:
-            pass
-    return _evaluate_safety_python(raw, safety_config)
+            results = None
+    if results is None:
+        results = _evaluate_safety_python(raw, safety_config)
+    return _annotate_safety_uncertainty(results, raw)
 
 # ---------------------------------------------------------------------------
 # Fitness with Safety Penalty
@@ -734,7 +1169,12 @@ def compute_fitness(mc_result, fitness_def, safety_config=None, safety_result=No
             # Count violations and apply penalty
             n_violations = sum(1 for c in safety["chance"] if not c["passed"])
             n_violations += sum(1 for c in safety["cvar"] if not c["passed"])
-            total *= max(0.1, 1.0 - 0.3 * n_violations)  # 30% penalty per violation
+            # 30% penalty per violation, floored at 10% of the unpenalized score.
+            # Applied sign-safely: a multiplicative shrink toward zero REWARDS a
+            # negative fitness (-100 * 0.7 = -70 ranks above -100), so negative
+            # scores are pushed further from zero by the same proportion instead.
+            factor = max(0.1, 1.0 - 0.3 * n_violations)
+            total = total * factor if total >= 0 else total * (2.0 - factor)
     
     return round(total, 2)
 
@@ -824,9 +1264,16 @@ def crossover(a, b, tunable):
 
 
 def _worker(args):
-    config_dict, fitness_def, safety_config, run_id = args
+    # args: (config_dict, fitness_def, safety_config, run_id[, seed]). The
+    # optional seed is the generation's common-random-numbers seed: every
+    # candidate in a generation is scored on the same draws, so fitness
+    # differences reflect the levers, not sampling luck (same idea as the CRN
+    # sensitivity analysis). Elites are re-scored each generation on fresh
+    # draws, which stops one lucky evaluation from locking in as best_ever.
+    config_dict, fitness_def, safety_config, run_id = args[:4]
+    seed = args[4] if len(args) > 4 else None
     cfg = DomainConfig.from_dict(config_dict)
-    mc = run_monte_carlo(cfg, n_override=min(cfg.n_simulations, 2000))
+    mc = run_monte_carlo(cfg, seed=seed, n_override=min(cfg.n_simulations, 2000))
     safety = evaluate_safety(mc, safety_config) if safety_config else {"all_passed": True}
     fitness = compute_fitness(mc, fitness_def, safety_config, safety_result=safety)
     
@@ -862,8 +1309,13 @@ def evolve(domain_path_or_dict, generations=15, population=20,
             "Add a tunable list of {\"path\": ..., \"range\": [lo, hi]} entries."
         )
     
+    # Common random numbers per generation (see _worker). Derived from the
+    # config seed when present so a seeded evolve() is fully reproducible.
+    ga_seed = int(config.seed) if config.seed is not None else random.getrandbits(32)
+    random.seed(ga_seed)
     manifest = make_manifest(base_dict, config.n_simulations, config.seed,
-                             {"generations": generations, "population": population})
+                             {"generations": generations, "population": population,
+                              "ga_seed": ga_seed})
     
     if verbose:
         print(f"SimEngine v3 Evolve: {config.name}")
@@ -893,7 +1345,9 @@ def evolve(domain_path_or_dict, generations=15, population=20,
     for gen in range(generations):
         t0 = time.time()
         
-        items = [(cfg, fitness_def, safety_config, f"g{gen}_i{i}") for i, cfg in enumerate(pop)]
+        gen_seed = (ga_seed + 7919 * (gen + 1)) & 0xFFFFFFFF
+        items = [(cfg, fitness_def, safety_config, f"g{gen}_i{i}", gen_seed)
+                 for i, cfg in enumerate(pop)]
         
         scored = []
         if workers > 1:

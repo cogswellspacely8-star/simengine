@@ -29,6 +29,7 @@ V3_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, V3_DIR)
 
 from kernel import (
+    KERNEL_VERSION,
     DomainConfig, run_monte_carlo, evaluate_safety,
     compute_fitness, evolve, SAMPLERS
 )
@@ -131,7 +132,8 @@ def _generate_narrative(stats, safety):
         lines.append("RISK WARNINGS:")
         for c in safety.get("chance", []):
             if not c["passed"]:
-                lines.append(f"  - P({c['metric']} {c['condition']} {c['threshold']:,}) = {c['actual_prob']:.1%} (limit {c['max_prob']:.1%})")
+                note = " [borderline: limit inside the 95% sampling interval]" if c.get("borderline") else ""
+                lines.append(f"  - P({c['metric']} {c['condition']} {c['threshold']:,}) = {c['actual_prob']:.1%} (limit {c['max_prob']:.1%}){note}")
         for c in safety.get("cvar", []):
             if not c["passed"]:
                 lines.append(f"  - CVaR({c['alpha']:.0%}) {c['metric']} = {c['actual_cvar']:,.0f} (min {c['min_cvar']:,})")
@@ -567,7 +569,7 @@ def run_with_stdio_jsonrpc():
                 "result": {
                     "protocolVersion": "2024-11-05",
                     "capabilities": {"tools": {}},
-                    "serverInfo": {"name": "simengine", "version": "3.0.0"},
+                    "serverInfo": {"name": "simengine", "version": KERNEL_VERSION},
                 },
             }
 

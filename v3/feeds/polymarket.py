@@ -63,18 +63,37 @@ def beta_prior(probability, strength=20):
     return {"alpha": probability * strength, "beta": (1.0 - probability) * strength}
 
 
-def prior_variable(probability, strength=20):
-    """Build a SimEngine variable_def (triangular) from a market probability.
+def prior_variable(probability, strength=20, distribution="triangular"):
+    """Build a SimEngine variable_def from a market probability.
 
-    The triangular bounds come from the implied Beta's spread, mirroring how
-    bayesian.beta_binomial_update maps a posterior back to triangular params —
-    so the result is consistent with the engine's own convention and is directly
-    updatable with the 'beta_binomial' method as real observations arrive.
+    distribution="triangular" (default, the historical contract): bounds come
+    from the implied Beta's spread; updates go through the moment-matched
+    Beta-Binomial path.
+
+    distribution="beta": the variable IS Beta(p*strength, (1-p)*strength), so
+    Beta-Binomial updates are exact and the prior strength is literally the
+    pseudo-count. Prefer this for anything that will be re-updated repeatedly
+    (e.g. a market prior refined as resolutions arrive).
     """
     if not 0.0 <= probability <= 1.0:
         raise ValueError("probability must be in [0, 1]")
     if strength <= 0:
         raise ValueError("strength must be positive")
+    if distribution == "beta":
+        ab = beta_prior(probability, strength)
+        return {
+            "distribution": "beta",
+            "params": {"alpha": round(ab["alpha"], 4), "beta": round(ab["beta"], 4)},
+            "calibration": {
+                "source": f"Polymarket-implied probability {probability:.2f} "
+                          f"(Beta prior, strength {strength})",
+                "updatable": True,
+                "update_method": "beta_binomial",
+                "prior_strength": strength,
+            },
+        }
+    if distribution != "triangular":
+        raise ValueError("distribution must be 'triangular' or 'beta'")
     std = math.sqrt(probability * (1.0 - probability) / (strength + 1.0))
     low = max(0.0, probability - 2.0 * std)
     high = min(1.0, probability + 2.0 * std)
@@ -90,13 +109,17 @@ def prior_variable(probability, strength=20):
                       f"(Beta prior, strength {strength})",
             "updatable": True,
             "update_method": "beta_binomial",
+            # Carried into bayesian.update_parameter as the Beta pseudo-count,
+            # so the market's weight survives into the posterior.
+            "prior_strength": strength,
         },
     }
 
 
-def market_prior(market, strength=20):
+def market_prior(market, strength=20, distribution="triangular"):
     """Convenience: raw Gamma market dict -> SimEngine prior variable_def."""
-    return prior_variable(yes_probability(market), strength=strength)
+    return prior_variable(yes_probability(market), strength=strength,
+                          distribution=distribution)
 
 
 def _http_get_json(url):

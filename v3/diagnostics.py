@@ -3,7 +3,8 @@ SimEngine Diagnostics Module
 ==============================
 Addresses peer review concerns:
   1. Convergence diagnostics — proves sample sizes are sufficient
-  2. Sensitivity analysis — variance decomposition (one-at-a-time + Sobol-style)
+  2. Sensitivity analysis — one-at-a-time perturbation with common random
+     numbers (first-order ranking; no Sobol/variance decomposition yet)
   3. Baseline comparison — spreadsheet-equivalent deterministic baseline
   4. Improved distributions — Student's t for fat tails, correlated sampling
 
@@ -24,7 +25,8 @@ from typing import Optional
 from kernel import (
     DomainConfig, run_monte_carlo, simulate_one,
     compute_fitness, percentile as _percentile, SAMPLERS, sampler,
-    _prepare_native_presampled_runs
+    PROCESSES, PROCESS_NOISE_PARAM,
+    _prepare_native_presampled_runs, SIM_LOCK
 )
 
 try:
@@ -54,11 +56,11 @@ def _checkpoint_stats(values, metric_name):
 
     sorted_values = sorted(values)
     return {
-        "mean": round(statistics.mean(values), 2),
-        "median": round(statistics.median(values), 2),
-        "std": round(statistics.stdev(values), 2) if len(values) > 1 else 0,
-        "p10": round(_percentile(sorted_values, 10), 2),
-        "p90": round(_percentile(sorted_values, 90), 2),
+        "mean": round(statistics.mean(values), 4),
+        "median": round(statistics.median(values), 4),
+        "std": round(statistics.stdev(values), 4) if len(values) > 1 else 0,
+        "p10": round(_percentile(sorted_values, 10), 4),
+        "p90": round(_percentile(sorted_values, 90), 4),
     }
 
 
@@ -91,23 +93,26 @@ def convergence_analysis(config: DomainConfig,
     if metric is None:
         metric = list(config.metrics.keys())[0]
     
-    random.seed(seed)
-    native_backend = _get_native_backend()
-    presampled_runs = _prepare_native_presampled_runs(
-        config, max(checkpoints), seed=seed, native_backend=native_backend
-    )
-    
-    # Run all simulations at once, then subsample
-    all_values = []
-    for run_index in range(max(checkpoints)):
-        result = simulate_one(
-            config,
-            sampled_steps=presampled_runs[run_index] if presampled_runs else None,
+    # Serialized like run_monte_carlo: this loop seeds and draws from the
+    # process-global RNG directly.
+    with SIM_LOCK:
+        random.seed(seed)
+        native_backend = _get_native_backend()
+        presampled_runs = _prepare_native_presampled_runs(
+            config, max(checkpoints), seed=seed, native_backend=native_backend
         )
-        # Extract the target metric from final state
-        state = result["final_state"]
-        state.update(result["metrics"])
-        all_values.append(result["metrics"].get(metric, 0))
+    
+        # Run all simulations at once, then subsample
+        all_values = []
+        for run_index in range(max(checkpoints)):
+            result = simulate_one(
+                config,
+                sampled_steps=presampled_runs[run_index] if presampled_runs else None,
+            )
+            # Extract the target metric from final state
+            state = result["final_state"]
+            state.update(result["metrics"])
+            all_values.append(result["metrics"].get(metric, 0))
     
     # Compute statistics at each checkpoint
     records = []
@@ -358,6 +363,14 @@ def deterministic_baseline(config: DomainConfig) -> dict:
     for var_name, var_def in det_config.all_variables.items():
         dist = var_def["distribution"]
         params = var_def.get("params", {})
+
+        # A process's deterministic counterpart is its zero-noise path, not a
+        # constant: keep the dynamics, silence the innovation.
+        if dist in PROCESSES:
+            quiet = dict(params)
+            quiet[PROCESS_NOISE_PARAM[dist]] = 0.0
+            det_config.all_variables[var_name] = {"distribution": dist, "params": quiet}
+            continue
         
         # Extract the "most likely" value for each distribution
         if dist == "fixed":
@@ -375,8 +388,21 @@ def deterministic_baseline(config: DomainConfig) -> dict:
             point_est = 1.0 if params.get("p", 0) >= 0.5 else 0.0
         elif dist == "poisson":
             point_est = params["lambda"]
-        elif dist == "choice":
-            point_est = params["options"][0]
+        elif dist == "student_t":
+            point_est = params.get("mean", 0)
+        elif dist == "beta":
+            lo, hi = params.get("low", 0.0), params.get("high", 1.0)
+            a, b = params["alpha"], params["beta"]
+            point_est = lo + (hi - lo) * a / (a + b)
+        elif dist == "gamma":
+            scale = params["scale"] if "scale" in params else 1.0 / params["rate"]
+            point_est = params["shape"] * scale
+        elif dist == "categorical":
+            values = params["values"]
+            probs = params.get("probs")
+            point_est = values[max(range(len(values)), key=lambda i: probs[i])] if probs else values[0]
+        elif dist == "empirical":
+            point_est = statistics.median(params["values"])
         else:
             point_est = 0
         

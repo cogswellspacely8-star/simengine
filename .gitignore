@@ -22,3 +22,6 @@ dist/
 build/
 *.egg-info/
 v3/results.json
+
+# Claude worktrees (Desktop default + workspace convention, see ~/AI/AGENTS.md)
+.claude/worktrees/

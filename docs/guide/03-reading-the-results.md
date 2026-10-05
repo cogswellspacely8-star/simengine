@@ -177,6 +177,23 @@ A domain can set several safety rules. **All of them must pass** for the overall
 - **Freelancer:** every check passed → **all_passed = true.** The decision ("go full-time?") looks viable — with eyes open about the lean months.
 - **Indie SaaS:** chance constraints and CVaR both failed → **all_passed = false.** The business bleeds cash in every future.
 
+## How sure is the engine about its own numbers?
+
+Every number above is an estimate from a finite pile of futures, so it has an
+error bar of its own. The result carries it as `ci95` on each metric: a 95%
+interval for the mean, the median, the p10 and the p90, and for the probability
+of an indicator metric. Two different widths are easy to confuse:
+
+- A wide **p10 to p90** says the *future* is uncertain. More simulations will not
+  narrow it; it is the honest answer.
+- A wide **ci95** says the *estimate* is uncertain. More simulations will narrow
+  it (four times the runs halves it).
+
+The same idea applies to chance constraints. If the limit you set sits inside
+the interval around the observed probability, the constraint is marked
+`borderline`: 15.2% against a 15% limit on 5,000 runs is a coin flip, not a
+verdict. Run more simulations before acting on it.
+
 ## The narrative and the fitness score
 
 Two more pieces round out a result.

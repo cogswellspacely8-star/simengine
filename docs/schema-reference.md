@@ -90,7 +90,7 @@ any use of `correlations`).
 
 ## Distributions
 
-Eight samplers are registered. The param keys below are the exact keys the kernel
+Twelve samplers and four processes are registered. The param keys below are the exact keys the kernel
 reads — spell them precisely.
 
 | Distribution | Required params | Optional params | Use when |
@@ -103,6 +103,10 @@ reads — spell them precisely.
 | `bernoulli` | `p` | — | A yes/no event with probability `p` (returns 0 or 1). |
 | `poisson` | `lambda` | — | A count of independent events in a period (arrivals, defects). |
 | `student_t` | *(none)* | `df`, `mean`, `scale`, `min`, `max` | A bell with heavier tails than normal — fat-tail risk. |
+| `beta` | `alpha`, `beta` | `low`, `high` | A rate or probability with explicit prior strength; the exact output of a Beta-Binomial update. |
+| `gamma` | `shape`, and `scale` or `rate` | — | A positive rate or waiting time; the exact output of a Gamma-Poisson update. |
+| `categorical` | `values` | `probs` | A discrete regime or scenario (encode as numbers so expressions can compare them). |
+| `empirical` | `values` | `jitter` | You have observed data and no parametric story; bootstrap from it. |
 
 Exact sampler behavior (so you author params correctly):
 
@@ -114,6 +118,46 @@ Exact sampler behavior (so you author params correctly):
 - **`bernoulli`** → 1 with probability `p`, else 0.
 - **`poisson`** → integer count with rate `lambda`.
 - **`student_t`** → defaults `df=5`, `mean=0`, `scale=1`, clamped with `min=-1e18`, `max=1e18`. Every param has a default, so `student_t` has no strictly-required key — but always set `df`/`mean`/`scale` deliberately.
+- **`beta`** → `low + (high - low) * Beta(alpha, beta)`, defaults `low=0`, `high=1`. `alpha`, `beta` > 0.
+- **`gamma`** → `Gamma(shape, scale)`; pass `rate` instead of `scale` if you think in rates (`scale = 1/rate`).
+- **`categorical`** → one of `values`, weighted by `probs` (normalized; uniform when absent). `probs` must match `values` in length.
+- **`empirical`** → a uniformly drawn element of `values`; with `jitter` > 0, plus `gauss(0, jitter)` (smoothed bootstrap).
+
+List-valued params (`values`, `probs`) are the only non-numeric params the engine
+accepts. They cannot be `$name` references, and a variable using them disables the
+native batch sampler for the run (Python sampling path).
+
+### Processes — variables with memory
+
+A process is declared with the same `{"distribution": ..., "params": ...}` shape
+but is advanced from its own previous value each step (the previous value is read
+from state under the variable's name; at step 1 it is `start`). All parameters are
+per step. `z` below is a standard-normal innovation drawn fresh each step; if the
+variable appears in `correlations`, the correlated normal is used as `z`, so two
+processes' shocks can be correlated.
+
+| Process | Required | Optional | Recursion |
+|---------|----------|----------|-----------|
+| `random_walk` | `start`, `std` | `drift`, `min`, `max` | `x = x_prev + drift + std*z` |
+| `gbm` | `start`, `sigma` | `mu`, `min`, `max` | `x = x_prev * exp(mu + sigma*z)` |
+| `ar1` | `mean`, `phi`, `std` | `start` (defaults to `mean`), `min`, `max` | `x = mean + phi*(x_prev - mean) + std*z` |
+| `mean_reverting` | `mean`, `theta`, `std` | `start` (defaults to `mean`), `min`, `max` | `x = x_prev + theta*(mean - x_prev) + std*z` |
+
+Semantics worth knowing:
+
+- **`gbm`**'s `mu` is the per-step drift of the *log* price: the median path grows by
+  `exp(mu)` per step and the mean by `exp(mu + sigma²/2)`. If you want the mean to
+  grow at a rate `r`, pass `mu = r - sigma²/2`. `start` must be positive.
+- **`ar1`** is stationary for `|phi| < 1` with long-run variance `std² / (1 - phi²)`;
+  `phi = 1` is a random walk; `|phi| > 1` is rejected by validation.
+- **`mean_reverting`** is the discrete Ornstein-Uhlenbeck process and equals `ar1`
+  with `phi = 1 - theta`. `theta` must be in `[0, 1]`.
+- Processes also work as inline `step_logic` samples (the `target` name carries the
+  memory). They are never batch-sampled natively (Python path). The deterministic
+  baseline runs a process with its noise set to zero rather than freezing it.
+- Path-dependent quantities (running peak, drawdown, first-passage) are built from
+  persistent `step_logic` targets seeded in `initial_state`; see
+  `domains/asset_price_paths.json`.
 
 > **Not a distribution: `correlated_normal`.** Older README tables list it as a
 > ninth distribution. It is **not** in the sampler registry, so `validate_config`
@@ -291,7 +335,20 @@ sampled independently.
 - `rho` — correlation coefficient (defaults to `0` if missing).
 
 The engine builds a correlation matrix and Cholesky factor and applies it to the
-samples. **Presence of any `correlations` entry disables the native batch sampler**
+samples through a **Gaussian copula**: correlated standard normals are mapped to
+each variable's own distribution via its inverse CDF. Two consequences worth
+knowing:
+
+- `rho` is the copula (normal-score) correlation, not the Pearson correlation of
+  the final samples. For normal marginals they coincide; for skewed marginals
+  (lognormal, poisson, bernoulli) the realized Pearson correlation is smaller in
+  magnitude. If you need a specific realized correlation, measure it from
+  `raw_metrics` and adjust `rho`.
+- The matrix must be positive-definite. An inconsistent set of pairwise rhos
+  (e.g. A~B 0.9, B~C 0.9, A~C -0.9) is currently clamped rather than rejected,
+  so the realized correlations will not match what was asked.
+
+**Presence of any `correlations` entry disables the native batch sampler**
 (the run falls back to the Python path).
 
 ---
@@ -326,12 +383,19 @@ count.
 
 Arithmetic, comparisons, and the ternary form `A if C else B`.
 
-### Not allowed (flagged as errors)
+### Not allowed (rejected)
 
 - Lambdas.
 - Comprehensions (list / set / dict / generator).
 - Attribute / dotted access (`x.y`).
+- Subscripts (`x[0]`), walrus, starred, f-strings.
+- Names beginning with `__`.
 - Any name not in the allowed set above.
+
+The syntax rules are enforced by the kernel itself when a config loads
+(`DomainConfig` raises `ValueError`; the HTTP API answers 400, MCP tools return
+an error), not only by `validate_config`. Unknown names are a validator-only
+check: the kernel evaluates them to 0.
 
 ---
 

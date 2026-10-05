@@ -25,13 +25,16 @@ Price in → prior → posterior, not price in → price out.
 | `implied_probabilities(market)` | yes | `{outcome: prob}` from a Gamma market dict |
 | `yes_probability(market)` | yes | the 'Yes' price (else first outcome) |
 | `beta_prior(p, strength=20)` | yes | `{alpha, beta}` Beta prior with mean `p` |
-| `prior_variable(p, strength=20)` | yes | a SimEngine triangular variable_def |
-| `market_prior(market, strength=20)` | yes | raw market dict → variable_def |
+| `prior_variable(p, strength=20, distribution="triangular")` | yes | a SimEngine variable_def; `distribution="beta"` for an exactly-updatable Beta prior |
+| `market_prior(market, strength=20, distribution="triangular")` | yes | raw market dict → variable_def |
 | `fetch_markets(query, active, closed, limit, _get)` | no (network) | list of market dicts |
 
 `strength` is the prior's concentration in pseudo-observations: higher = more
 confident the market is right. 20 is a sane default; lower it if you trust the
-market less.
+market less. It is recorded on the variable as `calibration.prior_strength`,
+and `bayesian.update_parameter` uses it as the Beta prior's pseudo-count, so
+the weight you give the market survives into the posterior (a strength-200
+prior barely moves on ten observations; a strength-5 prior follows them).
 
 ### Worked example
 
@@ -51,6 +54,11 @@ config["parameters"]["event_happens"] = var
 
 # 3. As your own evidence arrives, tighten it with the Beta-Binomial updater
 updated_params, report = beta_binomial_update(var["params"], observations=[(7, 10)])
+
+# Prefer a Beta variable when the prior will be re-updated repeatedly: the
+# conjugate update is then exact (Beta(12, 8) + 7/10 -> Beta(19, 11)) and
+# `strength` is literally the pseudo-count.
+var = polymarket.market_prior(m, strength=20, distribution="beta")
 ```
 
 ### ToS / posture
