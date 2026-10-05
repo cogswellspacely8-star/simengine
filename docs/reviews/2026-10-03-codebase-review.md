@@ -149,3 +149,13 @@ Phase 2 (first-class stochastic processes: random walk, AR(1), GBM, mean reversi
 Suite after phase 2: **420 tests OK** on both paths. HTTP smoke on `asset_price_paths.json`: 5,000 × 52 steps in 4.6 s on the pure path (processes are never batch-sampled natively; a native innovation pre-sampler is the obvious next performance step if path models become the main workload). MCP smoke: 9 tools, 18 domains.
 
 Not done: the shipped `btc_above_70k_jun2026.json` still hand-rolls GBM (left untouched so its logged forecast's `config_hash` stays valid). Phase 3 (ledger baseline column, skill-vs-market, CRPS resolution, first bucket-market domain) is not started.
+
+## Addendum — phase 3 ("close the loop"), 2026-10-04
+
+- `cb932a4` **Ledger baseline + skill + per-model + CRPS.** New columns `baseline_prob`, `baseline_source`, `model`, `outcome_value`; existing `forecasts.db` files migrate in place (tested against the original schema). `score()` / `calibration_report()` carry a baseline block (`brier_skill = 1 - model/baseline`), a `by_model` table (the input to a learned trust weight), and a `continuous` CRPS report for forecasts that stored samples. `crps_sample` is O(n log n) now. `pending()` lists unresolved forecasts by config hash / model.
+- `f42ed40` **API pass-through:** `/api/forecast` takes `baseline_prob`, `baseline_source`, `model`; `/api/resolve` takes `outcome_value`; `/api/forecasts` returns the extended report.
+- `8bc0176` **First bucket-market loop.** `domains/temp_high_buckets.json` prices five half-open temperature buckets from one run (mass 1.000 by construction, `ci95` on each). `v3/forecast_buckets.py record | resolve | report` logs the set with a same-moment baseline, grades every pending bucket of an event by evaluating each metric's own expression on the realized state (refusing if a name is missing, so nothing is ever a silent miss), and reports skill vs baseline per model. Documented in `docs/market-loop.md`, which also restates the posture: the engine prices events and keeps score; it fetches no prices, names no contracts, places no orders; venue data terms per `docs/feeds.md`.
+
+Suite after phase 3: **439 tests OK** on both paths; MCP smoke 9 tools, 19 domains. Live loop on a scratch ledger: record → resolve at 73.4 → report, one HIT in `p_73_75`, skill reported against the illustrative baseline.
+
+What the loop still lacks before real use: a per-event table (today the event is a tag in the question text and the config hash), a learned blend weight from `by_model`, a CVaR interval, and the Predictions UI does not yet show baseline / skill (API and CLI do). The sizing / fee / execution layer is intentionally outside this repo.
