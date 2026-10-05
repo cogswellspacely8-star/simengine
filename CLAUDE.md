@@ -51,13 +51,14 @@ v3/                        ALL production code lives here
   server.py                HTTP server + all API endpoints
   bayesian.py              Conjugate prior updates
   diagnostics.py           Convergence, sensitivity, AST evaluator
-  calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger (wired to /api/forecast|resolve|forecasts + the Predictions UI)
+  calibration.py           Proper scoring rules (Brier/log-loss/CRPS) + sqlite3 forecast ledger (wired to /api/forecast|resolve|forecasts + the Predictions UI). Columns baseline_prob/baseline_source/model/outcome_value were added later; the ledger migrates old DBs in place — add new columns to _ADDED_COLUMNS, never edit _SCHEMA alone
   backtest.py              Historical calibration backtest: walk-forward FRED forecasts through the engine, scored via calibration.py (offline from backtest_data/; --fetch refreshes, opt-in network)
   backtest_data/           Committed FRED CSV snapshots (UNRATE/CPIAUCSL/INDPRO) so the backtest is reproducible offline
   validation.py            Canonical config validation (shared by server + llm compiler); never raises on bad shapes
   native.py                Optional Rust loader + Python fallback glue
   mcp_server.py            MCP tool exposure (9 tools incl. decide_under_uncertainty)
   sim_ask.py               CLI: ask a plain-language question -> config -> run -> explain
+  forecast_buckets.py      CLI: record every indicator metric of a domain to the ledger (with a baseline), resolve them as a set from the realized state, report skill (docs/market-loop.md)
   static/index.html        Vanilla SPA UI (one file) — incl. Ask-anything + Predictions modals
   domains/                 Example JSON configs (saas, real_estate, nba_finals_2026, btc, fed, etc.)
   schema/                  domain.schema.json — published JSON Schema, served at GET /api/schema

@@ -43,6 +43,21 @@ The Brier score is the scoreboard for calibration — *do things you call 70% ac
 
 Why this matters: over time, a track record of low Brier scores is what turns "the engine said 64%" into "the engine has been right when it says 64%." That accumulated, checked record is the thing no one can fake — and it's exactly what makes a forecast worth acting on.
 
+### Score against a baseline, not just against reality
+
+A Brier score on its own cannot tell you whether the engine added anything —
+a weather forecast of 30% rain is only good if it beats the base rate. So a
+forecast can carry a **baseline**: the comparison probability (a base rate, a
+published forecast, a market's implied probability) recorded at the same moment.
+`POST /api/forecast` accepts `baseline_prob`, `baseline_source` and `model`;
+`GET /api/forecasts` then reports **skill vs baseline** (`1 - brier_model /
+brier_baseline`, positive means the engine beat it) and a per-model table.
+
+For range questions — which temperature band, which CPI bucket — the
+`forecast_buckets.py` tool records every bucket of an event from one run and
+grades them all at once when the real value lands. That loop is described in
+[docs/market-loop.md](../market-loop.md).
+
 ## Where this fits
 
 - New to the whole idea? Start with [What Is SimEngine?](01-what-is-simengine.md).

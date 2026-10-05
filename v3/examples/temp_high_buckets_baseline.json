@@ -1,0 +1,8 @@
+{
+  "_note": "ILLUSTRATIVE baseline probabilities for domains/temp_high_buckets.json, keyed by metric name. Replace with the comparison forecast you are measuring against (a market's implied probabilities, a climatology rate) recorded at the same moment you run the model. Not real prices.",
+  "p_lt_69": 0.08,
+  "p_69_71": 0.22,
+  "p_71_73": 0.34,
+  "p_73_75": 0.24,
+  "p_ge_75": 0.12
+}

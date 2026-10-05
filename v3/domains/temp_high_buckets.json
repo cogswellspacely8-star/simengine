@@ -1,0 +1,39 @@
+{
+  "name": "Daily High Temperature — Bucket Forecast",
+  "description": "Price every temperature bucket from ONE simulated distribution: a point forecast plus a fat-tailed historical forecast-error distribution gives the day's actual high; each 2-degree bucket is an indicator metric on the same paths, so the bucket probabilities are internally consistent and sum to 1. The natural shape for range / bucket questions (temperature, CPI, jobs prints) — and the shape forecast_buckets.py records and resolves as a set.",
+  "n_simulations": 20000,
+  "n_steps": 1,
+  "step_label": "day",
+  "seed": 7,
+  "context": {
+    "decision": "Given a 72°F point forecast, how is the probability mass spread across the 2-degree buckets for tomorrow's high?",
+    "what_good_looks_like": "Bucket probabilities that sum to 1, each with a 95% interval narrow enough to be compared against an external baseline."
+  },
+  "parameters": {
+    "point_forecast": {
+      "distribution": "fixed",
+      "params": {"value": 72},
+      "calibration": {"source": "Day-ahead point forecast for the station (e.g. NWS forecast max). Replace per day.", "updatable": false}
+    },
+    "forecast_error": {
+      "distribution": "student_t",
+      "params": {"df": 5, "mean": 0.3, "scale": 2.4},
+      "calibration": {
+        "source": "Historical (actual - forecast) for day-ahead max temperature at the station: slight warm bias (+0.3°F), ~2°F typical absolute error, fat tails on frontal-passage days. Fit from the station's own history before use.",
+        "updatable": true,
+        "update_method": "normal_normal"
+      }
+    }
+  },
+  "step_logic": [
+    {"target": "actual_high", "expr": "point_forecast + forecast_error"}
+  ],
+  "metrics": {
+    "actual_high": {"expr": "actual_high", "format": "number"},
+    "p_lt_69": {"expr": "100 if actual_high < 69 else 0", "format": "number"},
+    "p_69_71": {"expr": "100 if 69 <= actual_high < 71 else 0", "format": "number"},
+    "p_71_73": {"expr": "100 if 71 <= actual_high < 73 else 0", "format": "number"},
+    "p_73_75": {"expr": "100 if 73 <= actual_high < 75 else 0", "format": "number"},
+    "p_ge_75": {"expr": "100 if actual_high >= 75 else 0", "format": "number"}
+  }
+}
